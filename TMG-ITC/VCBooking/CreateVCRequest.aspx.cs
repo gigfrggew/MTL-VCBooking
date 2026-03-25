@@ -38,6 +38,10 @@ namespace VCBooking
                 LoadDropdown("SELECT LocationName,LocationId from dbo.Location_Master WHERE Status='Active'",
                     ddlLocation, "LocationName", "LocationId", "-- Select Location --");
             }
+            if (!IsPostBack)
+            {
+                txtFrom.Attributes["step"] = "900"; // 15 minutes
+            }
         }
 
         protected void btnAddParticipant_Click(object sender, EventArgs e)
@@ -130,7 +134,7 @@ namespace VCBooking
                     string.IsNullOrEmpty(txtTopic.Text) ||
                     string.IsNullOrEmpty(txtDate.Text) ||
                     string.IsNullOrEmpty(txtFrom.Text) ||
-                    string.IsNullOrEmpty(txtTo.Text))
+                    (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
                 {
                     ScriptManager.RegisterStartupScript(this, GetType(), "alert", "alert('Please fill all required fields');", true);
                     return;
@@ -186,7 +190,21 @@ namespace VCBooking
                             }
 
                             fullFromDateTime = DateTime.Parse(txtDate.Text + " " + txtFrom.Text);
-                            fullToDateTime = DateTime.Parse(txtDate.Text + " " + txtTo.Text);
+
+                            int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+                            int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+
+                            int duration = (hours * 60) + minutes;
+
+                            // ❗ Prevent 0 duration
+                            if (duration == 0)
+                            {
+                                ScriptManager.RegisterStartupScript(this, GetType(), "alert",
+                                    "alert('Please select valid duration');", true);
+                                return;
+                            }
+
+                            fullToDateTime = fullFromDateTime.AddMinutes(duration);
 
                             string overlapCheckQuery = @"
                                 SELECT COUNT(*) FROM VCRequestHeader
@@ -300,7 +318,7 @@ namespace VCBooking
                 if (ddlVCType.SelectedValue == "" ||
                     string.IsNullOrEmpty(txtDate.Text) ||
                     string.IsNullOrEmpty(txtFrom.Text) ||
-                    string.IsNullOrEmpty(txtTo.Text))
+                    (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
                 {
                     ddlVCAccount.Items.Clear();
                     ddlVCAccount.Items.Insert(0, new ListItem("-- Select Account --", ""));
@@ -333,11 +351,20 @@ namespace VCBooking
 
                     // 🔹 Robust Parsing
                     DateTime newFrom, newTo;
-                    if (!DateTime.TryParse(txtDate.Text + " " + txtFrom.Text, out newFrom) ||
-                        !DateTime.TryParse(txtDate.Text + " " + txtTo.Text, out newTo))
+
+                    // ✅ Get duration from Hours + Minutes dropdown
+                    int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+                    int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+
+                    int duration = (hours * 60) + minutes;
+
+                    // ✅ Validate and calculate time
+                    if (!DateTime.TryParse(txtDate.Text + " " + txtFrom.Text, out newFrom) || duration == 0)
                     {
-                        return; // Invalid format
+                        return;
                     }
+
+                    newTo = newFrom.AddMinutes(duration);
 
                     cmd.Parameters.Add("@NewFromTime", SqlDbType.DateTime).Value = newFrom;
                     cmd.Parameters.Add("@NewToTime", SqlDbType.DateTime).Value = newTo;

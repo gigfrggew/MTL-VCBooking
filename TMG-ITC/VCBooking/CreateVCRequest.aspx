@@ -76,10 +76,40 @@
                     </div>
 
                     <div class="col-md-4">
-                        <asp:Label runat="server" ID="lblTo" Text="To Time" CssClass="form-label" />
-                        <asp:TextBox ID="txtTo" runat="server" TextMode="Time"
-                            AutoPostBack="true" OnTextChanged="DateOrTimeChanged"
-                            CssClass="form-control" />
+                        <asp:Label runat="server" ID="lblDuration" Text="Duration" CssClass="form-label" />
+
+                        <div class="d-flex gap-2">
+
+                            <!-- Hours -->
+                            <asp:DropDownList ID="ddlHours" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                                <asp:ListItem Text="Hr" Value="" />
+                                <asp:ListItem Text="0" Value="0" />
+                                <asp:ListItem Text="1" Value="1" />
+                                <asp:ListItem Text="2" Value="2" />
+                                <asp:ListItem Text="3" Value="3" />
+                                <asp:ListItem Text="4" Value="4" />
+                                <asp:ListItem Text="5" Value="5" />
+                                <asp:ListItem Text="6" Value="6" />
+                                <asp:ListItem Text="7" Value="7" />
+                                <asp:ListItem Text="8" Value="8" />
+                                <asp:ListItem Text="9" Value="9" />
+                                <asp:ListItem Text="10" Value="10" />
+                            </asp:DropDownList>
+
+                            <!-- Minutes -->
+                            <asp:DropDownList ID="ddlMinutes" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                                <asp:ListItem Text="Min" Value="" />
+                                <asp:ListItem Text="00" Value="0" />
+                                <asp:ListItem Text="15" Value="15" />
+                                <asp:ListItem Text="30" Value="30" />
+                                <asp:ListItem Text="45" Value="45" />
+                            </asp:DropDownList>
+
+                        </div>
                     </div>
                 </div>
 
