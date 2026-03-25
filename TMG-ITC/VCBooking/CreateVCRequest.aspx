@@ -70,9 +70,27 @@
 
                     <div class="col-md-4">
                         <asp:Label runat="server" ID="lblFrom" Text="From Time" CssClass="form-label" />
-                        <asp:TextBox ID="txtFrom" runat="server" TextMode="Time"
-                            AutoPostBack="true" OnTextChanged="DateOrTimeChanged"
-                            CssClass="form-control" />
+
+                        <div class="d-flex gap-2">
+
+                            <!-- Hours -->
+                            <asp:DropDownList ID="ddlFromHour" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                            </asp:DropDownList>
+
+                            <!-- Minutes -->
+                            <asp:DropDownList ID="ddlFromMinute" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                                <asp:ListItem Text="Min" Value="" />
+                                <asp:ListItem Text="00" Value="0" />
+                                <asp:ListItem Text="15" Value="15" />
+                                <asp:ListItem Text="30" Value="30" />
+                                <asp:ListItem Text="45" Value="45" />
+                            </asp:DropDownList>
+
+                        </div>
                     </div>
 
                     <div class="col-md-4">

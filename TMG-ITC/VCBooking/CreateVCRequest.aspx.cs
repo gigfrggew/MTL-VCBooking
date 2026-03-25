@@ -40,8 +40,15 @@ namespace VCBooking
             }
             if (!IsPostBack)
             {
-                txtFrom.Attributes["step"] = "900"; // 15 minutes
+                ddlFromHour.Items.Clear();
+                ddlFromHour.Items.Add(new ListItem("Hr", ""));
+
+                for (int i = 0; i < 24; i++)
+                {
+                    ddlFromHour.Items.Add(new ListItem(i.ToString("00"), i.ToString()));
+                }
             }
+
         }
 
         protected void btnAddParticipant_Click(object sender, EventArgs e)
@@ -93,6 +100,7 @@ namespace VCBooking
 
                 txtParticipant.Text = "";
             }
+
         }
 
 
@@ -133,7 +141,7 @@ namespace VCBooking
                     ddlLocation.SelectedValue == "" ||
                     string.IsNullOrEmpty(txtTopic.Text) ||
                     string.IsNullOrEmpty(txtDate.Text) ||
-                    string.IsNullOrEmpty(txtFrom.Text) ||
+                    (ddlFromHour.SelectedValue == "" || ddlFromMinute.SelectedValue == "") ||
                     (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
                 {
                     ScriptManager.RegisterStartupScript(this, GetType(), "alert", "alert('Please fill all required fields');", true);
@@ -189,7 +197,13 @@ namespace VCBooking
                                 newVCId = "VC" + number.ToString("D3");
                             }
 
-                            fullFromDateTime = DateTime.Parse(txtDate.Text + " " + txtFrom.Text);
+
+                            int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                            int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+
+                            fullFromDateTime = DateTime.Parse(txtDate.Text)
+                                                    .AddHours(fromHour)
+                                                    .AddMinutes(fromMinute);
 
                             int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
                             int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
@@ -317,7 +331,7 @@ namespace VCBooking
             {
                 if (ddlVCType.SelectedValue == "" ||
                     string.IsNullOrEmpty(txtDate.Text) ||
-                    string.IsNullOrEmpty(txtFrom.Text) ||
+                    (ddlFromHour.SelectedValue == "" || ddlFromMinute.SelectedValue == "") ||
                     (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
                 {
                     ddlVCAccount.Items.Clear();
@@ -359,7 +373,14 @@ namespace VCBooking
                     int duration = (hours * 60) + minutes;
 
                     // ✅ Validate and calculate time
-                    if (!DateTime.TryParse(txtDate.Text + " " + txtFrom.Text, out newFrom) || duration == 0)
+                    int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                    int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+
+                    newFrom = DateTime.Parse(txtDate.Text)
+                                .AddHours(fromHour)
+                                .AddMinutes(fromMinute);
+
+                    if (duration == 0)
                     {
                         return;
                     }

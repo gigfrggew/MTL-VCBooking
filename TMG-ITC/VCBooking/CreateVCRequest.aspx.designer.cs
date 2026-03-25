@@ -96,13 +96,22 @@ namespace VCBooking
         protected global::System.Web.UI.WebControls.Label lblFrom;
 
         /// <summary>
-        /// txtFrom control.
+        /// ddlFromHour control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.TextBox txtFrom;
+        protected global::System.Web.UI.WebControls.DropDownList ddlFromHour;
+
+        /// <summary>
+        /// ddlFromMinute control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.DropDownList ddlFromMinute;
 
         /// <summary>
         /// lblDuration control.
