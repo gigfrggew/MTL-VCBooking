@@ -268,7 +268,7 @@ namespace VCBooking
                             {
                                 var emailService = new VCBooking.Services.EmailService();
                                 await emailService.SendMeetingInviteAsync(txtTopic.Text.Trim(), fullFromDateTime, 
-                                    (int)(fullToDateTime - fullFromDateTime).TotalMinutes, joinUrl, password, participantEmails);
+                                    (int)(fullToDateTime - fullFromDateTime).TotalMinutes, joinUrl, password, participantEmails, meetingId);
                             }
                             catch (Exception exEmail) { System.Diagnostics.Debug.WriteLine("Email Error: " + exEmail.Message); }
 

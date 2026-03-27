@@ -1,9 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.IO;
 using System.Net;
 using System.Net.Mail;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace VCBooking.Services
@@ -27,25 +29,19 @@ namespace VCBooking.Services
 
         // ─── Booking Created ──────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Sends a meeting invitation email to all participants.
-        /// </summary>
         public async Task SendMeetingInviteAsync(
             string topic, DateTime startDateTime, int durationMinutes,
-            string joinUrl, string password, List<string> recipientEmails)
+            string joinUrl, string password, List<string> recipientEmails, string meetingId = null)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
-
             string subject = "Invitation: " + topic;
-            string body = BuildInviteBody(topic, startDateTime, durationMinutes, joinUrl, null, password);
-            await SendToAllAsync(subject, body, recipientEmails);
+            string body = BuildInviteBody(topic, startDateTime, durationMinutes, joinUrl, meetingId, password);
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", 0);
+            await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
 
         // ─── Rescheduled ──────────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Sends a reschedule notification to all participants.
-        /// </summary>
         public async Task SendRescheduleNotificationAsync(
             string topic,
             DateTime oldDate, TimeSpan oldFromTime, TimeSpan oldToTime,
@@ -55,42 +51,39 @@ namespace VCBooking.Services
             List<string> recipientEmails)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
-
             string subject = "Meeting Rescheduled: " + topic;
             string body = BuildRescheduleBody(topic, oldDate, oldFromTime, oldToTime,
                                               newDate, newFromTime, newToTime,
                                               joinUrl, meetingId, password, reason);
-            await SendToAllAsync(subject, body, recipientEmails);
+            DateTime startDateTime = newDate.Date.Add(newFromTime);
+            int durationMinutes = (int)(newToTime - newFromTime).TotalMinutes;
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", 1);
+            await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
 
         // ─── Cancelled ────────────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Sends a cancellation notification to all participants.
-        /// </summary>
         public async Task SendCancellationNotificationAsync(
             string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
             string meetingId, string reason,
             List<string> recipientEmails)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
-
             string subject = "Meeting Cancelled: " + topic;
             string body = BuildCancellationBody(topic, meetingDate, fromTime, toTime, meetingId, reason);
-            await SendToAllAsync(subject, body, recipientEmails);
+            DateTime startDateTime = meetingDate.Date.Add(fromTime);
+            int durationMinutes = (int)(toTime - fromTime).TotalMinutes;
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, null, meetingId, "CANCEL", 2);
+            await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
 
         // ─── Expired ─────────────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Sends an expiry notification.
-        /// </summary>
         public async Task SendExpiryNotificationAsync(
             string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
             string meetingId, List<string> recipientEmails)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
-
             string subject = "Meeting Expired: " + topic;
             string body = BuildExpiryBody(topic, meetingDate, fromTime, toTime, meetingId);
             await SendToAllAsync(subject, body, recipientEmails);
@@ -98,19 +91,30 @@ namespace VCBooking.Services
 
         // ─── Internal helpers ─────────────────────────────────────────────────────
 
-        private async Task SendToAllAsync(string subject, string body, List<string> emails)
+        private async Task SendToAllAsync(string subject, string body, List<string> emails, byte[] attachmentBytes = null)
         {
-            try
+            // Ensure TLS 1.2 (required by Gmail)
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+
+            // Deduplicate recipients — prevents multiple emails if DB has duplicate rows
+            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            using (var client = new SmtpClient("smtp.gmail.com", 587))
             {
-                using (var client = new SmtpClient("smtp.gmail.com", 587))
+                client.UseDefaultCredentials = false;
+                client.Credentials = new NetworkCredential(_fromEmail, _smtpPassword);
+                client.EnableSsl = true;
+                client.DeliveryMethod = SmtpDeliveryMethod.Network;
+                client.Timeout = 30000;
+
+                foreach (var email in emails)
                 {
-                    client.Credentials = new NetworkCredential(_fromEmail, _smtpPassword);
-                    client.EnableSsl = true;
+                    if (string.IsNullOrWhiteSpace(email)) continue;
+                    if (!seen.Add(email.Trim().ToLowerInvariant())) continue; // skip duplicates
 
-                    foreach (var email in emails)
+                    // Per-recipient try-catch: one bad address won't block others
+                    try
                     {
-                        if (string.IsNullOrWhiteSpace(email)) continue;
-
                         using (var mail = new MailMessage())
                         {
                             mail.From = new MailAddress(_fromEmail, _fromName);
@@ -119,14 +123,30 @@ namespace VCBooking.Services
                             mail.Body = body;
                             mail.IsBodyHtml = true;
 
-                            await client.SendMailAsync(mail);
+                            if (attachmentBytes != null)
+                            {
+                                using (var ms = new MemoryStream(attachmentBytes))
+                                {
+                                    var attachment = new Attachment(ms, "invite.ics", "text/calendar");
+                                    mail.Attachments.Add(attachment);
+                                    await client.SendMailAsync(mail);
+                                }
+                            }
+                            else
+                            {
+                                await client.SendMailAsync(mail);
+                            }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            string.Format("[EmailService] Failed to send '{0}' to {1}: [{2}] {3}{4}",
+                                subject, email,
+                                ex.GetType().Name, ex.Message,
+                                ex.InnerException != null ? " | Inner: " + ex.InnerException.Message : ""));
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(string.Format("[EmailService] Error sending '{0}': {1}", subject, ex.Message));
             }
         }
 
@@ -141,7 +161,7 @@ namespace VCBooking.Services
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
             Row(sb, "Topic", topic);
             Row(sb, "Date", startDateTime.ToString("dddd, MMMM dd, yyyy"));
-            Row(sb, "Time", string.Format("{0} – {1}",
+            Row(sb, "Time", string.Format("{0} \u2013 {1}",
                 startDateTime.ToString("hh:mm tt"),
                 startDateTime.AddMinutes(durationMinutes).ToString("hh:mm tt")));
             sb.AppendLine("</table>");
@@ -163,11 +183,11 @@ namespace VCBooking.Services
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
             Row(sb, "Topic", topic);
             Row(sb, "Previous Schedule",
-                string.Format("{0} &nbsp; {1:hh\\:mm tt} – {2:hh\\:mm tt}",
+                string.Format("{0} &nbsp; {1:hh\\:mm tt} \u2013 {2:hh\\:mm tt}",
                     oldDate.ToString("dddd, MMMM dd, yyyy"),
                     DateTime.Today.Add(oldFrom), DateTime.Today.Add(oldTo)));
             Row(sb, "<strong>New Schedule</strong>",
-                string.Format("<strong>{0} &nbsp; {1:hh\\:mm tt} – {2:hh\\:mm tt}</strong>",
+                string.Format("<strong>{0} &nbsp; {1:hh\\:mm tt} \u2013 {2:hh\\:mm tt}</strong>",
                     newDate.ToString("dddd, MMMM dd, yyyy"),
                     DateTime.Today.Add(newFrom), DateTime.Today.Add(newTo)));
             if (!string.IsNullOrWhiteSpace(reason))
@@ -189,7 +209,7 @@ namespace VCBooking.Services
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
             Row(sb, "Topic", topic);
             Row(sb, "Date", meetingDate.ToString("dddd, MMMM dd, yyyy"));
-            Row(sb, "Time", string.Format("{0:hh\\:mm tt} – {1:hh\\:mm tt}",
+            Row(sb, "Time", string.Format("{0:hh\\:mm tt} \u2013 {1:hh\\:mm tt}",
                 DateTime.Today.Add(fromTime), DateTime.Today.Add(toTime)));
             if (!string.IsNullOrWhiteSpace(meetingId))
                 Row(sb, "Meeting ID", meetingId);
@@ -210,7 +230,7 @@ namespace VCBooking.Services
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
             Row(sb, "Topic", topic);
             Row(sb, "Date", meetingDate.ToString("dddd, MMMM dd, yyyy"));
-            Row(sb, "Time", string.Format("{0:hh\\:mm tt} – {1:hh\\:mm tt}",
+            Row(sb, "Time", string.Format("{0:hh\\:mm tt} \u2013 {1:hh\\:mm tt}",
                 DateTime.Today.Add(fromTime), DateTime.Today.Add(toTime)));
             if (!string.IsNullOrWhiteSpace(meetingId))
                 Row(sb, "Meeting ID", meetingId);
@@ -272,6 +292,45 @@ namespace VCBooking.Services
             if (!string.IsNullOrWhiteSpace(password))
                 sb.AppendFormat("<strong>Passcode:</strong> {0}", password);
             sb.AppendLine("</div>");
+        }
+
+        // ─── ICS Helper ───────────────────────────────────────────────────────────
+
+        private byte[] BuildIcsContent(string topic, DateTime startDateTime, int durationMinutes,
+            string joinUrl, string meetingId, string method, int sequence)
+        {
+            var sb = new StringBuilder();
+            string dtStamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ");
+            string dtStart = startDateTime.ToUniversalTime().ToString("yyyyMMddTHHmmssZ");
+            string dtEnd   = startDateTime.AddMinutes(durationMinutes).ToUniversalTime().ToString("yyyyMMddTHHmmssZ");
+            string uid     = string.Format("{0}@itc.vc.system", meetingId ?? Guid.NewGuid().ToString());
+
+            sb.AppendLine("BEGIN:VCALENDAR");
+            sb.AppendLine("VERSION:2.0");
+            sb.AppendLine("PRODID:-//ITC VC Booking//VC System//EN");
+            sb.AppendLine("CALSCALE:GREGORIAN");
+            sb.AppendLine("METHOD:" + method);
+            sb.AppendLine("BEGIN:VEVENT");
+            sb.AppendLine("UID:" + uid);
+            sb.AppendLine("DTSTAMP:" + dtStamp);
+            sb.AppendLine("DTSTART:" + dtStart);
+            sb.AppendLine("DTEND:" + dtEnd);
+            sb.AppendLine("SUMMARY:" + topic);
+            sb.AppendLine("DESCRIPTION:Video Conference Meeting.\\nJoin Zoom Meeting: " + (joinUrl ?? "N/A"));
+            sb.AppendLine("LOCATION:Zoom Meeting");
+            sb.AppendLine("ORGANIZER;CN=VC System:mailto:" + _fromEmail);
+            sb.AppendLine("SEQUENCE:" + sequence);
+            sb.AppendLine("STATUS:" + (method == "CANCEL" ? "CANCELLED" : "CONFIRMED"));
+            sb.AppendLine("CLASS:PUBLIC");
+            sb.AppendLine("BEGIN:VALARM");
+            sb.AppendLine("TRIGGER:-PT15M");
+            sb.AppendLine("ACTION:DISPLAY");
+            sb.AppendLine("DESCRIPTION:Reminder: " + topic);
+            sb.AppendLine("END:VALARM");
+            sb.AppendLine("END:VEVENT");
+            sb.AppendLine("END:VCALENDAR");
+
+            return Encoding.UTF8.GetBytes(sb.ToString());
         }
     }
 }

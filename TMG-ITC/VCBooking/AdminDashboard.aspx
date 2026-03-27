@@ -54,6 +54,9 @@
     <form id="form1" runat="server">
         <asp:HiddenField ID="hfDeleteVCId" runat="server" />
         <div class="container-fluid px-4 px-md-5 mt-4">
+            <div class="mb-3">
+                <a href="EmployeeDashboard.aspx" class="btn btn-secondary">&larr; Back to Dashboard</a>
+            </div>
             <h2 class="mb-4 fw-bold text-center">Admin Dashboard</h2>
             <div class="table-responsive shadow-sm rounded">
                 <asp:GridView ID="gvMeetings" runat="server" AutoGenerateColumns="False" 
@@ -113,7 +116,8 @@
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Back</button>
                                 <asp:Button ID="btnConfirmCancel" runat="server" Text="Confirm Cancellation"
-                                    CssClass="btn btn-warning" OnClick="btnConfirmCancel_Click" />
+                                    CssClass="btn btn-warning" OnClick="btnConfirmCancel_Click"
+                                    OnClientClick="this.disabled=true;this.value='Sending...';" />
                             </div>
                         </div>
                     </div>
@@ -153,7 +157,8 @@
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Back</button>
                                 <asp:Button ID="btnConfirmReschedule" runat="server" Text="Confirm Reschedule"
-                                    CssClass="btn btn-primary" OnClick="btnConfirmReschedule_Click" />
+                                    CssClass="btn btn-primary" OnClick="btnConfirmReschedule_Click"
+                                    OnClientClick="this.disabled=true;this.value='Sending...';" />
                             </div>
                         </div>
                     </div>
