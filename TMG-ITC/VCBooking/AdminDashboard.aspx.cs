@@ -201,16 +201,11 @@ namespace VCBooking
             {
                 hfRescheduleVCId.Value = vcId;
                 LoadMeetingDetailsForReschedule(vcId);
-                ClientScript.RegisterStartupScript(this.GetType(), "ShowReschedule", "window.onload = function() { openRescheduleModal(); };", true);
-            }
-            else if (e.CommandName == "CancelMeeting")
-            {
-                // This is now purely handled via client-side JS (showCancelModal) 
-                // but we keep this stub just in case of postback override
+                ClientScript.RegisterStartupScript(this.GetType(), "ShowReschedule", "openRescheduleModal();", true);
             }
             else if (e.CommandName == "DeleteMeeting")
             {
-                // This is now handled by btnConfirmDelete_Click and the Bootstrap modal
+                // Handled by btnConfirmDelete_Click and the Bootstrap modal
             }
         }
 
@@ -257,9 +252,10 @@ namespace VCBooking
 
                 // 4. Notify participants
                 var email = new Services.EmailService();
+                int sequence = (int)DateTime.UtcNow.Subtract(new DateTime(2025, 1, 1)).TotalSeconds;
                 await email.SendCancellationNotificationAsync(
                     details.Topic, details.Date, details.FromTime, details.ToTime,
-                    details.MeetingId, reason, details.Participants);
+                    details.MeetingId, reason, details.Participants, sequence);
 
                 txtCancelReason.Text = "";
                 LoadMeetings();
@@ -309,12 +305,13 @@ namespace VCBooking
 
                 // 4. Notify
                 var email = new Services.EmailService();
+                int sequence = (int)DateTime.UtcNow.Subtract(new DateTime(2025, 1, 1)).TotalSeconds;
                 await email.SendRescheduleNotificationAsync(
                     details.Topic,
                     details.Date, details.FromTime, details.ToTime,
                     newDate, newFrom, newTo,
                     details.JoinUrl, details.MeetingId, details.Password,
-                    reason, details.Participants);
+                    reason, details.Participants, sequence);
 
                 LoadMeetings();
             }
@@ -378,9 +375,9 @@ namespace VCBooking
             {
                 string query = "UPDATE VCRequestHeader SET VCDate = @Date, FromTime = @From, ToTime = @To, VCStatus = 'Rescheduled' WHERE VCId = @VCId";
                 SqlCommand cmd = new SqlCommand(query, con);
-                cmd.Parameters.AddWithValue("@Date", date);
-                cmd.Parameters.AddWithValue("@From", from);
-                cmd.Parameters.AddWithValue("@To", to);
+                cmd.Parameters.AddWithValue("@Date", date.Date);
+                cmd.Parameters.Add("@From", SqlDbType.DateTime).Value = date.Date.Add(from);
+                cmd.Parameters.Add("@To", SqlDbType.DateTime).Value = date.Date.Add(to);
                 cmd.Parameters.AddWithValue("@VCId", vcId);
                 con.Open();
                 cmd.ExecuteNonQuery();
