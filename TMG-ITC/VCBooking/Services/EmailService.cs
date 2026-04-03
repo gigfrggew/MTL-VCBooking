@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data.SqlClient;
 using System.IO;
 using System.Net;
 using System.Net.Mail;
@@ -21,12 +22,38 @@ namespace VCBooking.Services
         private readonly string _smtpPassword;
         private readonly string _fromName;
 
-        public EmailService()
+        public EmailService(string vcAccountId)
         {
-            _fromEmail = ConfigurationManager.AppSettings["SmtpEmail"];
-            _smtpPassword = ConfigurationManager.AppSettings["SmtpPassword"];
+            string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
+
+            using (SqlConnection conn = new SqlConnection(connStr))
+            {
+                conn.Open();
+
+                SqlCommand cmd = new SqlCommand(@"
+            SELECT VC_Email, VC_Email_Password
+            FROM VC_Account_Master
+            WHERE VCAccountId = @VCAccountId", conn);
+
+                cmd.Parameters.AddWithValue("@VCAccountId", vcAccountId);
+
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    _fromEmail = reader["VC_Email"].ToString();
+                    _smtpPassword = reader["VC_Email_Password"].ToString();
+                }
+                else
+                {
+                    throw new Exception("Email credentials not found in DB");
+                }
+            }
+
             _fromName = "VC System";
         }
+
+
 
         // ─── Booking Created ──────────────────────────────────────────────────────
 
@@ -83,12 +110,14 @@ namespace VCBooking.Services
             string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
             string meetingId, string reason,
             List<string> recipientEmails,
+            string cancelledBy,
+            bool isAdmin,
             int sequence = 2)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
 
             string subject = "Meeting Cancelled: " + topic;
-            string body = BuildCancellationBody(topic, meetingDate, fromTime, toTime, meetingId, reason);
+            string body = BuildCancellationBody(topic, meetingDate, fromTime, toTime, meetingId, reason, cancelledBy, isAdmin);
 
             DateTime startDateTime = meetingDate.Date.Add(fromTime);
             int durationMinutes = (int)(toTime - fromTime).TotalMinutes;
@@ -216,23 +245,44 @@ namespace VCBooking.Services
         }
 
         private string BuildCancellationBody(
-            string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
-            string meetingId, string reason)
+    string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
+    string meetingId, string reason, string cancelledBy,
+    bool isAdmin)
         {
             var sb = new StringBuilder();
+
+            // 🔥 Dynamic text logic
+            string cancelledText;
+            if (isAdmin)
+            {
+                cancelledText = "the administrator";
+            }
+            else
+            {
+                cancelledText = cancelledBy;
+            }
+
+            // ✅ Use dynamic text in UI
             OpenCard(sb, "#dc3545", "Meeting Cancelled",
-                "The following meeting has been cancelled by the administrator.");
+                $"The following meeting has been cancelled by <b>{cancelledText}</b>.");
+
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
+
             Row(sb, "Topic", topic);
             Row(sb, "Date", meetingDate.ToString("dddd, MMMM dd, yyyy"));
             Row(sb, "Time", string.Format("{0:hh\\:mm tt} – {1:hh\\:mm tt}",
                 DateTime.Today.Add(fromTime), DateTime.Today.Add(toTime)));
+
             if (!string.IsNullOrWhiteSpace(meetingId))
                 Row(sb, "Meeting ID", meetingId);
+
             if (!string.IsNullOrWhiteSpace(reason))
                 Row(sb, "Reason", reason);
+
             sb.AppendLine("</table>");
+
             CloseCard(sb);
+
             return sb.ToString();
         }
 

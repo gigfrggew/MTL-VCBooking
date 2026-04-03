@@ -263,11 +263,13 @@ namespace VCBooking
                                 return;
                             }
 
+                            int participantCount = participantEmails.Count;
+
                             string insertHeaderQuery = @"
                                 INSERT INTO VCRequestHeader
-                                (VCId, CompanyId, VCTypeId, VCAccountId, Topic, VCDate, FromTime, ToTime, LocationId, VCStatus, CreatedBy, CreatedDate)
+                                (VCId, CompanyId, VCTypeId, VCAccountId, Topic, VCDate, FromTime, ToTime,ParticipantCount, LocationId,UnitFloorDetails, VCDetails,VCStatus, CreatedBy, CreatedDate)
                                 VALUES
-                                (@VCId, @CompanyId, @VCTypeId, @VCAccountId, @Topic, @VCDate, @FromTime, @ToTime, @LocationId, 'New', @CreatedBy, GETDATE())";
+                                (@VCId, @CompanyId, @VCTypeId, @VCAccountId, @Topic, @VCDate, @FromTime, @ToTime, @ParticipantCount, @LocationId, @UnitFloorDetails, @VCDetails,'New', @CreatedBy, GETDATE())";
 
                             SqlCommand cmdHeader = new SqlCommand(insertHeaderQuery, conn, transaction);
                             cmdHeader.Parameters.AddWithValue("@VCId", newVCId);
@@ -278,22 +280,33 @@ namespace VCBooking
                             cmdHeader.Parameters.Add("@VCDate", SqlDbType.DateTime).Value = DateTime.Parse(txtDate.Text);
                             cmdHeader.Parameters.Add("@FromTime", SqlDbType.DateTime).Value = fullFromDateTime;
                             cmdHeader.Parameters.Add("@ToTime", SqlDbType.DateTime).Value = fullToDateTime;
+                            cmdHeader.Parameters.AddWithValue("@ParticipantCount", participantCount);
                             cmdHeader.Parameters.AddWithValue("@LocationId", ddlLocation.SelectedValue);
+                            cmdHeader.Parameters.AddWithValue("@UnitFloorDetails", txtUnitFloor.Text);
+                            cmdHeader.Parameters.AddWithValue("@VCDetails", txtVCDetails.Text);
                             cmdHeader.Parameters.AddWithValue("@CreatedBy", createdByName);
                             cmdHeader.ExecuteNonQuery();
 
                             foreach (string email in participantEmails)
                             {
                                 SqlCommand cmdParticipant = new SqlCommand(@"
-                                    INSERT INTO VCParticipants (VCId, ParticipantEmail, CreatedBy, CreatedDate)
-                                    VALUES (@VCId, @ParticipantEmail, @CreatedBy, GETDATE())", conn, transaction);
+                                  INSERT INTO VCParticipants 
+                                  (VCId, ParticipantEmail, LocationId, LocationName, CreatedBy, CreatedDate)
+                                  VALUES 
+                                  (@VCId, @ParticipantEmail, @LocationId, @LocationName, @CreatedBy, GETDATE())", conn, transaction);
+
                                 cmdParticipant.Parameters.AddWithValue("@VCId", newVCId);
                                 cmdParticipant.Parameters.AddWithValue("@ParticipantEmail", email);
+
+                                cmdParticipant.Parameters.AddWithValue("@LocationId", Convert.ToInt32(ddlLocation.SelectedValue));
+                                cmdParticipant.Parameters.AddWithValue("@LocationName", ddlLocation.SelectedItem.Text);
+
                                 cmdParticipant.Parameters.AddWithValue("@CreatedBy", createdByName);
+
                                 cmdParticipant.ExecuteNonQuery();
                             }
 
-                            var zoomService = new VCBooking.Services.ZoomService();
+                            var zoomService = new VCBooking.Services.ZoomService(ddlVCAccount.SelectedValue);
                             var zoomResponse = await zoomService.CreateMeetingAsync(
                                 txtTopic.Text.Trim(),
                                 fullFromDateTime,
@@ -322,7 +335,7 @@ namespace VCBooking
                             // Send Emails Outside Transaction
                             try
                             {
-                                var emailService = new VCBooking.Services.EmailService();
+                                var emailService = new VCBooking.Services.EmailService(ddlVCAccount.SelectedValue);
                                 await emailService.SendMeetingInviteAsync(txtTopic.Text.Trim(), fullFromDateTime, 
                                     (int)(fullToDateTime - fullFromDateTime).TotalMinutes, joinUrl, password, participantEmails);
                             }
@@ -487,8 +500,9 @@ namespace VCBooking
             {
                 await conn.OpenAsync();
 
+                // ✅ STEP 1: Include VCAccountId
                 string query = @"
-            SELECT VCId, MeetingId
+            SELECT VCId, MeetingId, VCAccountId
             FROM VCRequestHeader
             WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
             AND VCStatus IN ('Booked', 'Rescheduled')
@@ -497,26 +511,35 @@ namespace VCBooking
                 SqlCommand cmd = new SqlCommand(query, conn);
                 SqlDataReader reader = await cmd.ExecuteReaderAsync();
 
-                var expiredMeetings = new List<Tuple<string, string>>();
+                // ✅ STEP 2: Store 3 values
+                var expiredMeetings = new List<Tuple<string, string, string>>();
 
                 while (await reader.ReadAsync())
                 {
-                    expiredMeetings.Add(new Tuple<string, string>(
-                        reader["VCId"].ToString(),
-                        reader["MeetingId"].ToString()
+                    expiredMeetings.Add(new Tuple<string, string, string>(
+                        reader["VCId"].ToString(),          // VCId
+                        reader["MeetingId"].ToString(),     // MeetingId
+                        reader["VCAccountId"].ToString()    // VCAccountId
                     ));
                 }
 
                 reader.Close();
 
-                var zoomService = new VCBooking.Services.ZoomService();
+                // ❌ REMOVE this line (very important)
+                // var zoomService = new VCBooking.Services.ZoomService();
 
+                // ✅ STEP 3: Create ZoomService inside loop
                 foreach (var meeting in expiredMeetings)
                 {
                     try
                     {
+                        string vcId = meeting.Item1;
+                        string meetingId = meeting.Item2;
+                        string vcAccountId = meeting.Item3;
 
-                        await zoomService.DeleteMeetingAsync(meeting.Item2);
+                        var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
+
+                        await zoomService.DeleteMeetingAsync(meetingId);
 
                         string updateQuery = @"
                     UPDATE VCRequestHeader
@@ -525,7 +548,7 @@ namespace VCBooking
                     WHERE VCId = @VCId";
 
                         SqlCommand updateCmd = new SqlCommand(updateQuery, conn);
-                        updateCmd.Parameters.AddWithValue("@VCId", meeting.Item1);
+                        updateCmd.Parameters.AddWithValue("@VCId", vcId);
 
                         await updateCmd.ExecuteNonQueryAsync();
                     }
@@ -536,7 +559,5 @@ namespace VCBooking
                 }
             }
         }
-
-
     }
 }

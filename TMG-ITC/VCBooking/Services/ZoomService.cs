@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using System;
 using System.Configuration;
+using System.Data.SqlClient;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -16,11 +17,33 @@ namespace VCBooking.Services
         private readonly string _clientId;
         private readonly string _clientSecret;
 
-        public ZoomService()
+        public ZoomService(string vcAccountId)
         {
-            _accountId = ConfigurationManager.AppSettings["ZoomAccountId"];
-            _clientId = ConfigurationManager.AppSettings["Zoom:ClientId"];
-            _clientSecret = ConfigurationManager.AppSettings["Zoom:ClientSecret"];
+            string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
+
+            using(SqlConnection conn=new SqlConnection(connStr))
+            {
+                conn.Open();
+                SqlCommand cmd = new SqlCommand(@"
+                SELECT ZoomAccountId, ZoomClientId, ZoomClientSecret 
+                FROM VC_Account_Master 
+                WHERE VCAccountId = @VCAccountId", conn);
+
+                cmd.Parameters.AddWithValue("@VCAccountId", vcAccountId);
+
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    _accountId = reader["ZoomAccountId"].ToString();
+                    _clientId = reader["ZoomClientId"].ToString();
+                    _clientSecret = reader["ZoomClientSecret"].ToString();
+                }
+                else
+                {
+                    throw new Exception("Zoom credentials not found in DB");
+                }
+            }
         }
 
         /// <summary>

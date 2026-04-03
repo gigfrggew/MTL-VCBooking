@@ -20,10 +20,16 @@ namespace VCBooking
             {
                 lblWelcome.Text = "" + Session["username"];
 
-                // Show Admin Dashboard button only for admins
-                if (Session["IsAdmin"] != null && (bool)Session["IsAdmin"])
+                bool isAdmin = Session["IsAdmin"] != null && (bool)Session["IsAdmin"];
+
+                if (isAdmin)
                 {
                     btnAdminDashboard.Visible = true;
+                }
+                else
+                {
+                    btnAdminDashboard.Visible = false;
+                    btnViewRequests.Visible = true;   // (optional but clean)
                 }
             }
         }
@@ -47,7 +53,7 @@ namespace VCBooking
         {
             Session.Clear();
             Session.Abandon();
-            Response.Redirect("~/Login.aspx");
+            Response.Redirect("~/Login.aspx"); 
         }
     }
 }
