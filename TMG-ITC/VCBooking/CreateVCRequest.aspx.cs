@@ -24,6 +24,7 @@ namespace VCBooking
             }
             if (!IsPostBack)
             {
+                // 1. Basic Dropdowns
                 await CleanupExpiredMeetings();
                 DataTable dt = new DataTable();
                 dt.Columns.Add("ParticipantEmail");
@@ -37,7 +38,41 @@ namespace VCBooking
 
                 LoadDropdown("SELECT LocationName,LocationId from dbo.Location_Master WHERE Status='Active'",
                     ddlLocation, "LocationName", "LocationId", "-- Select Location --");
+
+                // 2. Populate Hour Dropdown
+                ddlFromHour.Items.Clear();
+                ddlFromHour.Items.Add(new ListItem("Hr", ""));
+                for (int i = 0; i < 24; i++)
+                {
+                    ddlFromHour.Items.Add(new ListItem(i.ToString("00"), i.ToString()));
+                }
+
+                // 3. Automation Logic (Next 15-Minute Slot)
+                DateTime now = DateTime.Now;
+                int minutesSinceMidnight = now.Hour * 60 + now.Minute;
+                
+                // Add 1 min then divide by 15 + 1 to get the next interval
+                // e.g. 10:00 -> 600 -> next 615 -> 10:15
+                // e.g. 10:14 -> 614 -> next 615 -> 10:15
+                // e.g. 10:15 -> 615 -> next 630 -> 10:30
+                int nextInterval = ((minutesSinceMidnight / 15) + 1) * 15;
+                
+                DateTime targetTime = now.Date.AddMinutes(nextInterval);
+                
+                txtDate.Text = targetTime.ToString("yyyy-MM-dd");
+                ddlFromHour.SelectedValue = targetTime.Hour.ToString();
+                ddlFromMinute.SelectedValue = targetTime.Minute.ToString();
+
+                // 4. Default Duration (15 min)
+                ddlHours.SelectedValue = "0";
+                ddlMinutes.SelectedValue = "15";
+
+                // 5. Trigger Initial Availability View
+                // Note: ddlVCType is still --Select--, so it might not load accounts yet, 
+                // but at least BookedSlots will show today's calendar.
+                LoadBookedSlots();
             }
+
         }
 
         protected void btnAddParticipant_Click(object sender, EventArgs e)
@@ -89,6 +124,7 @@ namespace VCBooking
 
                 txtParticipant.Text = "";
             }
+
         }
 
 
@@ -129,8 +165,8 @@ namespace VCBooking
                     ddlLocation.SelectedValue == "" ||
                     string.IsNullOrEmpty(txtTopic.Text) ||
                     string.IsNullOrEmpty(txtDate.Text) ||
-                    string.IsNullOrEmpty(txtFrom.Text) ||
-                    string.IsNullOrEmpty(txtTo.Text))
+                    (ddlFromHour.SelectedValue == "" || ddlFromMinute.SelectedValue == "") ||
+                    (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
                 {
                     ScriptManager.RegisterStartupScript(this, GetType(), "alert", "alert('Please fill all required fields');", true);
                     return;
@@ -185,8 +221,28 @@ namespace VCBooking
                                 newVCId = "VC" + number.ToString("D3");
                             }
 
-                            fullFromDateTime = DateTime.Parse(txtDate.Text + " " + txtFrom.Text);
-                            fullToDateTime = DateTime.Parse(txtDate.Text + " " + txtTo.Text);
+
+                            int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                            int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+
+                            fullFromDateTime = DateTime.Parse(txtDate.Text)
+                                                    .AddHours(fromHour)
+                                                    .AddMinutes(fromMinute);
+
+                            int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+                            int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+
+                            int duration = (hours * 60) + minutes;
+
+                            // ❗ Prevent 0 duration
+                            if (duration == 0)
+                            {
+                                ScriptManager.RegisterStartupScript(this, GetType(), "alert",
+                                    "alert('Please select valid duration');", true);
+                                return;
+                            }
+
+                            fullToDateTime = fullFromDateTime.AddMinutes(duration);
 
                             string overlapCheckQuery = @"
                                 SELECT COUNT(*) FROM VCRequestHeader
@@ -207,11 +263,13 @@ namespace VCBooking
                                 return;
                             }
 
+                            int participantCount = participantEmails.Count;
+
                             string insertHeaderQuery = @"
                                 INSERT INTO VCRequestHeader
-                                (VCId, CompanyId, VCTypeId, VCAccountId, Topic, VCDate, FromTime, ToTime, LocationId, VCStatus, CreatedBy, CreatedDate)
+                                (VCId, CompanyId, VCTypeId, VCAccountId, Topic, VCDate, FromTime, ToTime,ParticipantCount, LocationId,UnitFloorDetails, VCDetails,VCStatus, CreatedBy, CreatedDate)
                                 VALUES
-                                (@VCId, @CompanyId, @VCTypeId, @VCAccountId, @Topic, @VCDate, @FromTime, @ToTime, @LocationId, 'New', @CreatedBy, GETDATE())";
+                                (@VCId, @CompanyId, @VCTypeId, @VCAccountId, @Topic, @VCDate, @FromTime, @ToTime, @ParticipantCount, @LocationId, @UnitFloorDetails, @VCDetails,'New', @CreatedBy, GETDATE())";
 
                             SqlCommand cmdHeader = new SqlCommand(insertHeaderQuery, conn, transaction);
                             cmdHeader.Parameters.AddWithValue("@VCId", newVCId);
@@ -222,22 +280,33 @@ namespace VCBooking
                             cmdHeader.Parameters.Add("@VCDate", SqlDbType.DateTime).Value = DateTime.Parse(txtDate.Text);
                             cmdHeader.Parameters.Add("@FromTime", SqlDbType.DateTime).Value = fullFromDateTime;
                             cmdHeader.Parameters.Add("@ToTime", SqlDbType.DateTime).Value = fullToDateTime;
+                            cmdHeader.Parameters.AddWithValue("@ParticipantCount", participantCount);
                             cmdHeader.Parameters.AddWithValue("@LocationId", ddlLocation.SelectedValue);
+                            cmdHeader.Parameters.AddWithValue("@UnitFloorDetails", txtUnitFloor.Text);
+                            cmdHeader.Parameters.AddWithValue("@VCDetails", txtVCDetails.Text);
                             cmdHeader.Parameters.AddWithValue("@CreatedBy", createdByName);
                             cmdHeader.ExecuteNonQuery();
 
                             foreach (string email in participantEmails)
                             {
                                 SqlCommand cmdParticipant = new SqlCommand(@"
-                                    INSERT INTO VCParticipants (VCId, ParticipantEmail, CreatedBy, CreatedDate)
-                                    VALUES (@VCId, @ParticipantEmail, @CreatedBy, GETDATE())", conn, transaction);
+                                  INSERT INTO VCParticipants 
+                                  (VCId, ParticipantEmail, LocationId, LocationName, CreatedBy, CreatedDate)
+                                  VALUES 
+                                  (@VCId, @ParticipantEmail, @LocationId, @LocationName, @CreatedBy, GETDATE())", conn, transaction);
+
                                 cmdParticipant.Parameters.AddWithValue("@VCId", newVCId);
                                 cmdParticipant.Parameters.AddWithValue("@ParticipantEmail", email);
+
+                                cmdParticipant.Parameters.AddWithValue("@LocationId", Convert.ToInt32(ddlLocation.SelectedValue));
+                                cmdParticipant.Parameters.AddWithValue("@LocationName", ddlLocation.SelectedItem.Text);
+
                                 cmdParticipant.Parameters.AddWithValue("@CreatedBy", createdByName);
+
                                 cmdParticipant.ExecuteNonQuery();
                             }
 
-                            var zoomService = new VCBooking.Services.ZoomService();
+                            var zoomService = new VCBooking.Services.ZoomService(ddlVCAccount.SelectedValue);
                             var zoomResponse = await zoomService.CreateMeetingAsync(
                                 txtTopic.Text.Trim(),
                                 fullFromDateTime,
@@ -266,7 +335,7 @@ namespace VCBooking
                             // Send Emails Outside Transaction
                             try
                             {
-                                var emailService = new VCBooking.Services.EmailService();
+                                var emailService = new VCBooking.Services.EmailService(ddlVCAccount.SelectedValue);
                                 await emailService.SendMeetingInviteAsync(txtTopic.Text.Trim(), fullFromDateTime, 
                                     (int)(fullToDateTime - fullFromDateTime).TotalMinutes, joinUrl, password, participantEmails);
                             }
@@ -299,8 +368,8 @@ namespace VCBooking
             {
                 if (ddlVCType.SelectedValue == "" ||
                     string.IsNullOrEmpty(txtDate.Text) ||
-                    string.IsNullOrEmpty(txtFrom.Text) ||
-                    string.IsNullOrEmpty(txtTo.Text))
+                    (ddlFromHour.SelectedValue == "" || ddlFromMinute.SelectedValue == "") ||
+                    (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
                 {
                     ddlVCAccount.Items.Clear();
                     ddlVCAccount.Items.Insert(0, new ListItem("-- Select Account --", ""));
@@ -333,11 +402,27 @@ namespace VCBooking
 
                     // 🔹 Robust Parsing
                     DateTime newFrom, newTo;
-                    if (!DateTime.TryParse(txtDate.Text + " " + txtFrom.Text, out newFrom) ||
-                        !DateTime.TryParse(txtDate.Text + " " + txtTo.Text, out newTo))
+
+                    // ✅ Get duration from Hours + Minutes dropdown
+                    int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+                    int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+
+                    int duration = (hours * 60) + minutes;
+
+                    // ✅ Validate and calculate time
+                    int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                    int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+
+                    newFrom = DateTime.Parse(txtDate.Text)
+                                .AddHours(fromHour)
+                                .AddMinutes(fromMinute);
+
+                    if (duration == 0)
                     {
-                        return; // Invalid format
+                        return;
                     }
+
+                    newTo = newFrom.AddMinutes(duration);
 
                     cmd.Parameters.Add("@NewFromTime", SqlDbType.DateTime).Value = newFrom;
                     cmd.Parameters.Add("@NewToTime", SqlDbType.DateTime).Value = newTo;
@@ -365,6 +450,45 @@ namespace VCBooking
         protected void DateOrTimeChanged(object sender, EventArgs e)
         {
             LoadAvailableAccounts();
+            LoadBookedSlots();
+        }
+
+        private void LoadBookedSlots()
+        {
+            gvBookedSlots.DataSource = null;
+            gvBookedSlots.DataBind();
+
+            if (string.IsNullOrEmpty(txtDate.Text))
+                return;
+
+            string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
+
+            using (SqlConnection conn = new SqlConnection(connStr))
+            {
+                string query = @"
+                    SELECT
+                        a.VCAccountName,
+                        h.Topic,
+                        h.FromTime,
+                        h.ToTime,
+                        h.VCStatus
+                    FROM VCRequestHeader h
+                    INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
+                    WHERE h.VCStatus IN ('Booked', 'Rescheduled')
+                    AND CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE)
+                    ORDER BY h.FromTime";
+
+                SqlCommand cmd = new SqlCommand(query, conn);
+                cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = DateTime.Parse(txtDate.Text);
+
+                conn.Open();
+                SqlDataAdapter da = new SqlDataAdapter(cmd);
+                DataTable dt = new DataTable();
+                da.Fill(dt);
+
+                gvBookedSlots.DataSource = dt;
+                gvBookedSlots.DataBind();
+            }
         }
 
 
@@ -376,8 +500,9 @@ namespace VCBooking
             {
                 await conn.OpenAsync();
 
+                // ✅ STEP 1: Include VCAccountId
                 string query = @"
-            SELECT VCId, MeetingId
+            SELECT VCId, MeetingId, VCAccountId
             FROM VCRequestHeader
             WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
             AND VCStatus IN ('Booked', 'Rescheduled')
@@ -386,26 +511,35 @@ namespace VCBooking
                 SqlCommand cmd = new SqlCommand(query, conn);
                 SqlDataReader reader = await cmd.ExecuteReaderAsync();
 
-                var expiredMeetings = new List<Tuple<string, string>>();
+                // ✅ STEP 2: Store 3 values
+                var expiredMeetings = new List<Tuple<string, string, string>>();
 
                 while (await reader.ReadAsync())
                 {
-                    expiredMeetings.Add(new Tuple<string, string>(
-                        reader["VCId"].ToString(),
-                        reader["MeetingId"].ToString()
+                    expiredMeetings.Add(new Tuple<string, string, string>(
+                        reader["VCId"].ToString(),          // VCId
+                        reader["MeetingId"].ToString(),     // MeetingId
+                        reader["VCAccountId"].ToString()    // VCAccountId
                     ));
                 }
 
                 reader.Close();
 
-                var zoomService = new VCBooking.Services.ZoomService();
+                // ❌ REMOVE this line (very important)
+                // var zoomService = new VCBooking.Services.ZoomService();
 
+                // ✅ STEP 3: Create ZoomService inside loop
                 foreach (var meeting in expiredMeetings)
                 {
                     try
                     {
+                        string vcId = meeting.Item1;
+                        string meetingId = meeting.Item2;
+                        string vcAccountId = meeting.Item3;
 
-                        await zoomService.DeleteMeetingAsync(meeting.Item2);
+                        var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
+
+                        await zoomService.DeleteMeetingAsync(meetingId);
 
                         string updateQuery = @"
                     UPDATE VCRequestHeader
@@ -414,7 +548,7 @@ namespace VCBooking
                     WHERE VCId = @VCId";
 
                         SqlCommand updateCmd = new SqlCommand(updateQuery, conn);
-                        updateCmd.Parameters.AddWithValue("@VCId", meeting.Item1);
+                        updateCmd.Parameters.AddWithValue("@VCId", vcId);
 
                         await updateCmd.ExecuteNonQueryAsync();
                     }
@@ -425,7 +559,5 @@ namespace VCBooking
                 }
             }
         }
-
-
     }
 }

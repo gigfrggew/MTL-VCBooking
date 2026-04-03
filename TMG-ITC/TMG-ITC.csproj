@@ -184,7 +184,6 @@
     <Content Include="VCBooking\EmployeeDashboard.aspx" />
     <Content Include="Login.aspx" />
     <Content Include="VCBooking\ViewRequests.aspx" />
-    <Content Include="VCBooking\ZoomCallback.aspx" />
     <Content Include="ViewSwitcher.ascx" />
     <Content Include="Web.config" />
     <Content Include="Bundle.config" />
@@ -275,13 +274,6 @@
     </Compile>
     <Compile Include="VCBooking\ViewRequests.aspx.designer.cs">
       <DependentUpon>ViewRequests.aspx</DependentUpon>
-    </Compile>
-    <Compile Include="VCBooking\ZoomCallback.aspx.cs">
-      <DependentUpon>ZoomCallback.aspx</DependentUpon>
-      <SubType>ASPXCodeBehind</SubType>
-    </Compile>
-    <Compile Include="VCBooking\ZoomCallback.aspx.designer.cs">
-      <DependentUpon>ZoomCallback.aspx</DependentUpon>
     </Compile>
     <Compile Include="ViewSwitcher.ascx.cs">
       <DependentUpon>ViewSwitcher.ascx</DependentUpon>

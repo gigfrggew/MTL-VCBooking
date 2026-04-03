@@ -6,6 +6,7 @@ using System.Data.SqlClient;
 using System.Threading.Tasks;
 using System.Web.UI;
 using System.Web.UI.WebControls;
+using VCBooking.Services;
 
 namespace VCBooking
 {
@@ -42,42 +43,56 @@ namespace VCBooking
                 {
                     await con.OpenAsync();
 
+                    // ✅ STEP 1: Include VCAccountId
                     string query = @"
-                        SELECT VCId, MeetingId
-                        FROM VCRequestHeader
-                        WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
-                        AND VCStatus IN ('Booked', 'Rescheduled')
-                        AND MeetingId IS NOT NULL";
+                SELECT VCId, MeetingId, VCAccountId
+                FROM VCRequestHeader
+                WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
+                AND VCStatus IN ('Booked', 'Rescheduled')
+                AND MeetingId IS NOT NULL";
 
                     SqlCommand cmd = new SqlCommand(query, con);
                     SqlDataReader reader = await cmd.ExecuteReaderAsync();
 
-                    var expiredMeetings = new List<Tuple<string, string>>();
+                    // ✅ STEP 2: Store VCAccountId also
+                    var expiredMeetings = new List<Tuple<string, string, string>>();
+
                     while (await reader.ReadAsync())
                     {
-                        expiredMeetings.Add(new Tuple<string, string>(
-                            reader["VCId"].ToString(),
-                            reader["MeetingId"].ToString()
+                        expiredMeetings.Add(new Tuple<string, string, string>(
+                            reader["VCId"].ToString(),          // Item1
+                            reader["MeetingId"].ToString(),     // Item2
+                            reader["VCAccountId"].ToString()    // Item3
                         ));
                     }
+
                     reader.Close();
 
-                    var zoomService = new Services.ZoomService();
+                    // ❌ REMOVE this line (wrong)
+                    // var zoomService = new Services.ZoomService(vcAccountId);
 
+                    // ✅ STEP 3: Create ZoomService per meeting
                     foreach (var meeting in expiredMeetings)
                     {
                         try
                         {
-                            await zoomService.DeleteMeetingAsync(meeting.Item2);
+                            string vcId = meeting.Item1;
+                            string meetingId = meeting.Item2;
+                            string vcAccountId = meeting.Item3;
+
+                            var zoomService = new Services.ZoomService(vcAccountId);
+
+                            await zoomService.DeleteMeetingAsync(meetingId);
 
                             string updateQuery = @"
-                                UPDATE VCRequestHeader
-                                SET VCStatus = 'Completed',
-                                    APIStatus = 'Deleted'
-                                WHERE VCId = @VCId";
+                        UPDATE VCRequestHeader
+                        SET VCStatus = 'Completed',
+                        APIStatus = 'Deleted'
+                        WHERE VCId = @VCId";
 
                             SqlCommand updateCmd = new SqlCommand(updateQuery, con);
-                            updateCmd.Parameters.AddWithValue("@VCId", meeting.Item1);
+                            updateCmd.Parameters.AddWithValue("@VCId", vcId);
+
                             await updateCmd.ExecuteNonQueryAsync();
                         }
                         catch (Exception ex)
@@ -92,6 +107,8 @@ namespace VCBooking
                 System.Diagnostics.Debug.WriteLine("CleanupExpiredMeetings error: " + ex.Message);
             }
         }
+
+
 
         private void LoadMeetings()
         {
@@ -201,16 +218,11 @@ namespace VCBooking
             {
                 hfRescheduleVCId.Value = vcId;
                 LoadMeetingDetailsForReschedule(vcId);
-                ClientScript.RegisterStartupScript(this.GetType(), "ShowReschedule", "window.onload = function() { openRescheduleModal(); };", true);
-            }
-            else if (e.CommandName == "CancelMeeting")
-            {
-                // This is now purely handled via client-side JS (showCancelModal) 
-                // but we keep this stub just in case of postback override
+                ClientScript.RegisterStartupScript(this.GetType(), "ShowReschedule", "openRescheduleModal();", true);
             }
             else if (e.CommandName == "DeleteMeeting")
             {
-                // This is now handled by btnConfirmDelete_Click and the Bootstrap modal
+                // Handled by btnConfirmDelete_Click and the Bootstrap modal
             }
         }
 
@@ -246,7 +258,7 @@ namespace VCBooking
                 if (details == null) return;
 
                 // 2. Delete Zoom Meeting
-                var zoom = new Services.ZoomService();
+                var zoom = new Services.ZoomService(details.VCAccountId.ToString());
                 if (!string.IsNullOrEmpty(details.MeetingId))
                 {
                     await zoom.DeleteMeetingAsync(details.MeetingId);
@@ -256,10 +268,24 @@ namespace VCBooking
                 UpdateStatusInDB(vcId, "Cancelled", reason);
 
                 // 4. Notify participants
-                var email = new Services.EmailService();
-                await email.SendCancellationNotificationAsync(
-                    details.Topic, details.Date, details.FromTime, details.ToTime,
-                    details.MeetingId, reason, details.Participants);
+                var emailService = new EmailService(details.VCAccountId.ToString());
+                int sequence = (int)DateTime.UtcNow.Subtract(new DateTime(2025, 1, 1)).TotalSeconds;
+
+                string cancelledBy = Session["UserName"]?.ToString();
+                bool isAdmin = Session["IsAdmin"] != null && (bool)Session["IsAdmin"];
+
+                await emailService.SendCancellationNotificationAsync(
+                details.Topic,
+                details.Date,
+                details.FromTime,
+                details.ToTime,
+                details.MeetingId,
+                reason,
+                details.Participants,
+                cancelledBy, 
+                isAdmin,       
+                sequence      
+                 );
 
                 txtCancelReason.Text = "";
                 LoadMeetings();
@@ -296,7 +322,7 @@ namespace VCBooking
                 }
 
                 // 2. Update Zoom
-                var zoom = new Services.ZoomService();
+                var zoom = new Services.ZoomService(details.VCAccountId.ToString());
                 if (!string.IsNullOrEmpty(details.MeetingId))
                 {
                     DateTime start = newDate.Add(newFrom);
@@ -308,13 +334,14 @@ namespace VCBooking
                 UpdateScheduleInDB(vcId, newDate, newFrom, newTo);
 
                 // 4. Notify
-                var email = new Services.EmailService();
-                await email.SendRescheduleNotificationAsync(
+                var emailService = new EmailService(details.VCAccountId.ToString());
+                int sequence = (int)DateTime.UtcNow.Subtract(new DateTime(2025, 1, 1)).TotalSeconds;
+                await emailService.SendRescheduleNotificationAsync(
                     details.Topic,
                     details.Date, details.FromTime, details.ToTime,
                     newDate, newFrom, newTo,
                     details.JoinUrl, details.MeetingId, details.Password,
-                    reason, details.Participants);
+                    reason, details.Participants, sequence);
 
                 LoadMeetings();
             }
@@ -340,7 +367,7 @@ namespace VCBooking
                     con.Open();
                     object result = cmd.ExecuteScalar();
                     string status = result != null ? result.ToString() : null;
-                    
+
                     if (status != "Completed" && status != "Cancelled")
                     {
                         Response.Write("<script>alert('Error: Only Completed or Cancelled meetings can be deleted.');</script>");
@@ -361,12 +388,21 @@ namespace VCBooking
         {
             using (SqlConnection con = new SqlConnection(ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString))
             {
-                string query = "UPDATE VCRequestHeader SET VCStatus = @Status, CancelReason = @Reason, CancelledDate = GETDATE(), CancelledBy = @By WHERE VCId = @VCId";
+                string query = @"
+                UPDATE VCRequestHeader 
+                SET VCStatus = @Status,
+                APIStatus = @Status,  
+                CancelReason = @Reason, 
+                CancelledDate = GETDATE(), 
+                CancelledBy = @By 
+                WHERE VCId = @VCId";
+
                 SqlCommand cmd = new SqlCommand(query, con);
                 cmd.Parameters.AddWithValue("@Status", status);
                 cmd.Parameters.AddWithValue("@Reason", reason);
                 cmd.Parameters.AddWithValue("@By", Session["UserName"] != null ? Session["UserName"].ToString() : "Admin");
                 cmd.Parameters.AddWithValue("@VCId", vcId);
+
                 con.Open();
                 cmd.ExecuteNonQuery();
             }
@@ -378,9 +414,9 @@ namespace VCBooking
             {
                 string query = "UPDATE VCRequestHeader SET VCDate = @Date, FromTime = @From, ToTime = @To, VCStatus = 'Rescheduled' WHERE VCId = @VCId";
                 SqlCommand cmd = new SqlCommand(query, con);
-                cmd.Parameters.AddWithValue("@Date", date);
-                cmd.Parameters.AddWithValue("@From", from);
-                cmd.Parameters.AddWithValue("@To", to);
+                cmd.Parameters.AddWithValue("@Date", date.Date);
+                cmd.Parameters.Add("@From", SqlDbType.DateTime).Value = date.Date.Add(from);
+                cmd.Parameters.Add("@To", SqlDbType.DateTime).Value = date.Date.Add(to);
                 cmd.Parameters.AddWithValue("@VCId", vcId);
                 con.Open();
                 cmd.ExecuteNonQuery();
@@ -394,7 +430,8 @@ namespace VCBooking
                 var details = GetBaseMeetingDetails(vcId);
                 if (details != null && !string.IsNullOrEmpty(details.MeetingId))
                 {
-                    await new Services.ZoomService().DeleteMeetingAsync(details.MeetingId);
+                    await new Services.ZoomService(details.VCAccountId.ToString())
+                        .DeleteMeetingAsync(details.MeetingId);
                 }
 
                 using (SqlConnection con = new SqlConnection(ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString))
@@ -404,17 +441,33 @@ namespace VCBooking
                     {
                         try
                         {
+                            // ✅ STEP 1: Update status to 'Deleted'
+                            SqlCommand cmdUpdate = new SqlCommand(@"
+                        UPDATE VCRequestHeader
+                        SET VCStatus = 'Deleted',
+                            APIStatus = 'Deleted'
+                        WHERE VCId = @Id", con, trans);
+
+                            cmdUpdate.Parameters.AddWithValue("@Id", vcId);
+                            cmdUpdate.ExecuteNonQuery();
+
+                            // ✅ STEP 2: Delete participants
                             SqlCommand cmdP = new SqlCommand("DELETE FROM VCParticipants WHERE VCId = @Id", con, trans);
                             cmdP.Parameters.AddWithValue("@Id", vcId);
                             cmdP.ExecuteNonQuery();
 
+                            // ✅ STEP 3: Delete main record
                             SqlCommand cmdH = new SqlCommand("DELETE FROM VCRequestHeader WHERE VCId = @Id", con, trans);
                             cmdH.Parameters.AddWithValue("@Id", vcId);
                             cmdH.ExecuteNonQuery();
 
                             trans.Commit();
                         }
-                        catch { trans.Rollback(); throw; }
+                        catch
+                        {
+                            trans.Rollback();
+                            throw;
+                        }
                     }
                 }
             }
@@ -433,11 +486,11 @@ namespace VCBooking
                                  AND VCStatus NOT IN ('Cancelled', 'Completed')
                                  AND VCId <> @ExcludeId
                                  AND (@Start < ToTime AND @End > FromTime)";
-                
+
                 SqlCommand cmd = new SqlCommand(query, con);
                 cmd.Parameters.AddWithValue("@AccountId", accountId);
                 cmd.Parameters.AddWithValue("@ExcludeId", excludeVcId);
-                
+
                 DateTime start = date.Add(from);
                 DateTime end = date.Add(to);
                 cmd.Parameters.Add("@Start", SqlDbType.DateTime).Value = start;

@@ -70,16 +70,64 @@
 
                     <div class="col-md-4">
                         <asp:Label runat="server" ID="lblFrom" Text="From Time" CssClass="form-label" />
-                        <asp:TextBox ID="txtFrom" runat="server" TextMode="Time"
-                            AutoPostBack="true" OnTextChanged="DateOrTimeChanged"
-                            CssClass="form-control" />
+
+                        <div class="d-flex gap-2">
+
+                            <!-- Hours -->
+                            <asp:DropDownList ID="ddlFromHour" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                            </asp:DropDownList>
+
+                            <!-- Minutes -->
+                            <asp:DropDownList ID="ddlFromMinute" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                                <asp:ListItem Text="Min" Value="" />
+                                <asp:ListItem Text="00" Value="0" />
+                                <asp:ListItem Text="15" Value="15" />
+                                <asp:ListItem Text="30" Value="30" />
+                                <asp:ListItem Text="45" Value="45" />
+                            </asp:DropDownList>
+
+                        </div>
                     </div>
 
                     <div class="col-md-4">
-                        <asp:Label runat="server" ID="lblTo" Text="To Time" CssClass="form-label" />
-                        <asp:TextBox ID="txtTo" runat="server" TextMode="Time"
-                            AutoPostBack="true" OnTextChanged="DateOrTimeChanged"
-                            CssClass="form-control" />
+                        <asp:Label runat="server" ID="lblDuration" Text="Duration" CssClass="form-label" />
+
+                        <div class="d-flex gap-2">
+
+                            <!-- Hours -->
+                            <asp:DropDownList ID="ddlHours" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                                <asp:ListItem Text="Hr" Value="" />
+                                <asp:ListItem Text="0" Value="0" />
+                                <asp:ListItem Text="1" Value="1" />
+                                <asp:ListItem Text="2" Value="2" />
+                                <asp:ListItem Text="3" Value="3" />
+                                <asp:ListItem Text="4" Value="4" />
+                                <asp:ListItem Text="5" Value="5" />
+                                <asp:ListItem Text="6" Value="6" />
+                                <asp:ListItem Text="7" Value="7" />
+                                <asp:ListItem Text="8" Value="8" />
+                                <asp:ListItem Text="9" Value="9" />
+                                <asp:ListItem Text="10" Value="10" />
+                            </asp:DropDownList>
+
+                            <!-- Minutes -->
+                            <asp:DropDownList ID="ddlMinutes" runat="server"
+                                AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
+                                CssClass="form-select">
+                                <asp:ListItem Text="Min" Value="" />
+                                <asp:ListItem Text="00" Value="0" />
+                                <asp:ListItem Text="15" Value="15" />
+                                <asp:ListItem Text="30" Value="30" />
+                                <asp:ListItem Text="45" Value="45" />
+                            </asp:DropDownList>
+
+                        </div>
                     </div>
                 </div>
 
@@ -87,28 +135,59 @@
                 <h5 class="text-secondary mt-4 mb-3">VC Details</h5>
 
                 <div class="row mb-3">
+
+                    <!-- LEFT COLUMN: VC Type, Account, Location stacked -->
                     <div class="col-md-4">
-                        <asp:Label runat="server" ID="lblVCType" Text="VC Type" CssClass="form-label" />
-                        <asp:DropDownList runat="server" ID="ddlVCType"
-                            AutoPostBack="true"
-                            OnSelectedIndexChanged="ddlVCType_SelectedIndexChanged"
-                            CssClass="form-select">
-                        </asp:DropDownList>
+
+                        <div class="mb-2">
+                            <asp:Label runat="server" ID="lblVCType" Text="VC Type" CssClass="form-label" />
+                            <asp:DropDownList runat="server" ID="ddlVCType"
+                                AutoPostBack="true"
+                                OnSelectedIndexChanged="ddlVCType_SelectedIndexChanged"
+                                CssClass="form-select form-select-sm">
+                            </asp:DropDownList>
+                        </div>
+
+                        <div class="mb-2">
+                            <asp:Label runat="server" ID="lblVCAccount" Text="VC Account" CssClass="form-label" />
+                            <asp:DropDownList runat="server" ID="ddlVCAccount" CssClass="form-select form-select-sm">
+                            </asp:DropDownList>
+                        </div>
+
+                        <div class="mb-2">
+                            <asp:Label runat="server" ID="lblLocation" Text="Location" CssClass="form-label" />
+                            <asp:DropDownList runat="server" ID="ddlLocation" CssClass="form-select form-select-sm">
+                            </asp:DropDownList>
+                        </div>
+
                     </div>
 
-                    <div class="col-md-4">
-                        <asp:Label runat="server" ID="lblVCAccount" Text="VC Account" CssClass="form-label" />
-                        <asp:DropDownList runat="server" ID="ddlVCAccount" CssClass="form-select">
-                        </asp:DropDownList>
+                    <!-- RIGHT COLUMN: Booked Meetings Preview -->
+                    <div class="col-md-8">
+                        <label class="form-label fw-semibold text-secondary">
+                            <i class="bi bi-calendar2-check"></i> Booked Meetings on Selected Slot
+                        </label>
+                        <div class="border rounded p-2 bg-white" style="min-height: 160px; max-height: 270px; overflow-y: auto;">
+                            <asp:GridView runat="server"
+                                ID="gvBookedSlots"
+                                CssClass="table table-sm table-bordered mb-0"
+                                AutoGenerateColumns="false"
+                                EmptyDataText="No meetings booked on this slot."
+                                GridLines="None">
+                                <Columns>
+                                    <asp:BoundField DataField="VCAccountName" HeaderText="Account" />
+                                    <asp:BoundField DataField="Topic"         HeaderText="Topic" />
+                                    <asp:BoundField DataField="FromTime"      HeaderText="From"  DataFormatString="{0:HH:mm}" />
+                                    <asp:BoundField DataField="ToTime"        HeaderText="To"    DataFormatString="{0:HH:mm}" />
+                                    <asp:BoundField DataField="VCStatus"      HeaderText="Status" />
+                                </Columns>
+                            </asp:GridView>
+                        </div>
                     </div>
 
-                    <div class="col-md-4">
-                        <asp:Label runat="server" ID="lblLocation" Text="Location" CssClass="form-label" />
-                        <asp:DropDownList runat="server" ID="ddlLocation" CssClass="form-select">
-                        </asp:DropDownList>
-                    </div>
                 </div>
 
+                <!-- Unit / Floor  +  VC Details — unchanged, full width -->
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <asp:Label runat="server" ID="lblUnitFloor" Text="Unit / Floor Details" CssClass="form-label" />

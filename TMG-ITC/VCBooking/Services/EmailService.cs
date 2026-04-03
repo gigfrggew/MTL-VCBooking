@@ -1,9 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data.SqlClient;
+using System.IO;
 using System.Net;
 using System.Net.Mail;
+using System.Net.Mime;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace VCBooking.Services
@@ -18,12 +22,38 @@ namespace VCBooking.Services
         private readonly string _smtpPassword;
         private readonly string _fromName;
 
-        public EmailService()
+        public EmailService(string vcAccountId)
         {
-            _fromEmail = ConfigurationManager.AppSettings["SmtpEmail"];
-            _smtpPassword = ConfigurationManager.AppSettings["SmtpPassword"];
+            string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
+
+            using (SqlConnection conn = new SqlConnection(connStr))
+            {
+                conn.Open();
+
+                SqlCommand cmd = new SqlCommand(@"
+            SELECT VC_Email, VC_Email_Password
+            FROM VC_Account_Master
+            WHERE VCAccountId = @VCAccountId", conn);
+
+                cmd.Parameters.AddWithValue("@VCAccountId", vcAccountId);
+
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    _fromEmail = reader["VC_Email"].ToString();
+                    _smtpPassword = reader["VC_Email_Password"].ToString();
+                }
+                else
+                {
+                    throw new Exception("Email credentials not found in DB");
+                }
+            }
+
             _fromName = "VC System";
         }
+
+
 
         // ─── Booking Created ──────────────────────────────────────────────────────
 
@@ -32,13 +62,15 @@ namespace VCBooking.Services
         /// </summary>
         public async Task SendMeetingInviteAsync(
             string topic, DateTime startDateTime, int durationMinutes,
-            string joinUrl, string password, List<string> recipientEmails)
+            string joinUrl, string password, List<string> recipientEmails, string meetingId = null, int sequence = 0)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
 
             string subject = "Invitation: " + topic;
-            string body = BuildInviteBody(topic, startDateTime, durationMinutes, joinUrl, null, password);
-            await SendToAllAsync(subject, body, recipientEmails);
+            string body = BuildInviteBody(topic, startDateTime, durationMinutes, joinUrl, meetingId, password);
+
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", sequence);
+            await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
 
         // ─── Rescheduled ──────────────────────────────────────────────────────────
@@ -52,7 +84,8 @@ namespace VCBooking.Services
             DateTime newDate, TimeSpan newFromTime, TimeSpan newToTime,
             string joinUrl, string meetingId, string password,
             string reason,
-            List<string> recipientEmails)
+            List<string> recipientEmails,
+            int sequence = 1)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
 
@@ -60,7 +93,12 @@ namespace VCBooking.Services
             string body = BuildRescheduleBody(topic, oldDate, oldFromTime, oldToTime,
                                               newDate, newFromTime, newToTime,
                                               joinUrl, meetingId, password, reason);
-            await SendToAllAsync(subject, body, recipientEmails);
+
+            DateTime startDateTime = newDate.Date.Add(newFromTime);
+            int durationMinutes = (int)(newToTime - newFromTime).TotalMinutes;
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", sequence);
+
+            await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
 
         // ─── Cancelled ────────────────────────────────────────────────────────────
@@ -71,13 +109,21 @@ namespace VCBooking.Services
         public async Task SendCancellationNotificationAsync(
             string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
             string meetingId, string reason,
-            List<string> recipientEmails)
+            List<string> recipientEmails,
+            string cancelledBy,
+            bool isAdmin,
+            int sequence = 2)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
 
             string subject = "Meeting Cancelled: " + topic;
-            string body = BuildCancellationBody(topic, meetingDate, fromTime, toTime, meetingId, reason);
-            await SendToAllAsync(subject, body, recipientEmails);
+            string body = BuildCancellationBody(topic, meetingDate, fromTime, toTime, meetingId, reason, cancelledBy, isAdmin);
+
+            DateTime startDateTime = meetingDate.Date.Add(fromTime);
+            int durationMinutes = (int)(toTime - fromTime).TotalMinutes;
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, null, meetingId, "CANCEL", sequence);
+
+            await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
 
         // ─── Expired ─────────────────────────────────────────────────────────────
@@ -98,7 +144,7 @@ namespace VCBooking.Services
 
         // ─── Internal helpers ─────────────────────────────────────────────────────
 
-        private async Task SendToAllAsync(string subject, string body, List<string> emails)
+        private async Task SendToAllAsync(string subject, string body, List<string> emails, byte[] attachmentBytes = null)
         {
             try
             {
@@ -111,15 +157,34 @@ namespace VCBooking.Services
                     {
                         if (string.IsNullOrWhiteSpace(email)) continue;
 
-                        using (var mail = new MailMessage())
+                        try
                         {
-                            mail.From = new MailAddress(_fromEmail, _fromName);
-                            mail.To.Add(email.Trim());
-                            mail.Subject = subject;
-                            mail.Body = body;
-                            mail.IsBodyHtml = true;
+                            using (var mail = new MailMessage())
+                            {
+                                mail.From = new MailAddress(_fromEmail, _fromName);
+                                mail.To.Add(email.Trim());
+                                mail.Subject = subject;
+                                mail.Body = body;
+                                mail.IsBodyHtml = true;
 
-                            await client.SendMailAsync(mail);
+                                if (attachmentBytes != null)
+                                {
+                                    using (var ms = new MemoryStream(attachmentBytes))
+                                    {
+                                        Attachment attachment = new Attachment(ms, "invite.ics", "text/calendar");
+                                        mail.Attachments.Add(attachment);
+                                        await client.SendMailAsync(mail);
+                                    }
+                                }
+                                else
+                                {
+                                    await client.SendMailAsync(mail);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine(string.Format("[EmailService] Failed to send to {0}: {1}", email, ex.Message));
                         }
                     }
                 }
@@ -180,23 +245,44 @@ namespace VCBooking.Services
         }
 
         private string BuildCancellationBody(
-            string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
-            string meetingId, string reason)
+    string topic, DateTime meetingDate, TimeSpan fromTime, TimeSpan toTime,
+    string meetingId, string reason, string cancelledBy,
+    bool isAdmin)
         {
             var sb = new StringBuilder();
+
+            // 🔥 Dynamic text logic
+            string cancelledText;
+            if (isAdmin)
+            {
+                cancelledText = "the administrator";
+            }
+            else
+            {
+                cancelledText = cancelledBy;
+            }
+
+            // ✅ Use dynamic text in UI
             OpenCard(sb, "#dc3545", "Meeting Cancelled",
-                "The following meeting has been cancelled by the administrator.");
+                $"The following meeting has been cancelled by <b>{cancelledText}</b>.");
+
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
+
             Row(sb, "Topic", topic);
             Row(sb, "Date", meetingDate.ToString("dddd, MMMM dd, yyyy"));
             Row(sb, "Time", string.Format("{0:hh\\:mm tt} – {1:hh\\:mm tt}",
                 DateTime.Today.Add(fromTime), DateTime.Today.Add(toTime)));
+
             if (!string.IsNullOrWhiteSpace(meetingId))
                 Row(sb, "Meeting ID", meetingId);
+
             if (!string.IsNullOrWhiteSpace(reason))
                 Row(sb, "Reason", reason);
+
             sb.AppendLine("</table>");
+
             CloseCard(sb);
+
             return sb.ToString();
         }
 
@@ -272,6 +358,47 @@ namespace VCBooking.Services
             if (!string.IsNullOrWhiteSpace(password))
                 sb.AppendFormat("<strong>Passcode:</strong> {0}", password);
             sb.AppendLine("</div>");
+        }
+        // ─── ICS Helper ───────────────────────────────────────────────────────────
+
+        private byte[] BuildIcsContent(string topic, DateTime startDateTime, int durationMinutes,
+            string joinUrl, string meetingId, string method, int sequence)
+        {
+            var sb = new StringBuilder();
+            string dtStamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ");
+            string dtStart = startDateTime.ToUniversalTime().ToString("yyyyMMddTHHmmssZ");
+            string dtEnd = startDateTime.AddMinutes(durationMinutes).ToUniversalTime().ToString("yyyyMMddTHHmmssZ");
+            string uid = string.Format("{0}@{1}", meetingId ?? Guid.NewGuid().ToString(), "itc.vc.system");
+
+            sb.AppendLine("BEGIN:VCALENDAR");
+            sb.AppendLine("VERSION:2.0");
+            sb.AppendLine("PRODID:-//ITC VC Booking//VC System//EN");
+            sb.AppendLine("CALSCALE:GREGORIAN");
+            sb.AppendLine("METHOD:" + method);
+            sb.AppendLine("BEGIN:VEVENT");
+            sb.AppendLine("UID:" + uid);
+            sb.AppendLine("DTSTAMP:" + dtStamp);
+            sb.AppendLine("DTSTART:" + dtStart);
+            sb.AppendLine("DTEND:" + dtEnd);
+            sb.AppendLine("SUMMARY:" + topic);
+            sb.AppendLine("DESCRIPTION:Video Conference Meeting.\\nJoin Zoom Meeting: " + (joinUrl ?? "N/A"));
+            sb.AppendLine("LOCATION:Zoom Meeting");
+            sb.AppendLine("ORGANIZER;CN=VC System:mailto:" + _fromEmail);
+            sb.AppendLine("SEQUENCE:" + sequence);
+            sb.AppendLine("STATUS:" + (method == "CANCEL" ? "CANCELLED" : "CONFIRMED"));
+            sb.AppendLine("CLASS:PUBLIC");
+
+            // Add standard 15-minute reminder
+            sb.AppendLine("BEGIN:VALARM");
+            sb.AppendLine("TRIGGER:-PT15M");
+            sb.AppendLine("ACTION:DISPLAY");
+            sb.AppendLine("DESCRIPTION:Reminder: " + topic);
+            sb.AppendLine("END:VALARM");
+
+            sb.AppendLine("END:VEVENT");
+            sb.AppendLine("END:VCALENDAR");
+
+            return Encoding.UTF8.GetBytes(sb.ToString());
         }
     }
 }

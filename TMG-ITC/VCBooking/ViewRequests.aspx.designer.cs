@@ -33,12 +33,21 @@ namespace VCBooking
         protected global::System.Web.UI.WebControls.GridView gvRequests;
 
         /// <summary>
-        /// hdnShowSuccess control.
+        /// txtCancelReason control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.HiddenField hdnShowSuccess;
+        protected global::System.Web.UI.WebControls.TextBox txtCancelReason;
+
+        /// <summary>
+        /// btnConfirmCancel control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.Button btnConfirmCancel;
     }
 }
