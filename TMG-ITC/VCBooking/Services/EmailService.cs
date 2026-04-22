@@ -62,14 +62,14 @@ namespace VCBooking.Services
         /// </summary>
         public async Task SendMeetingInviteAsync(
             string topic, DateTime startDateTime, int durationMinutes,
-            string joinUrl, string password, List<string> recipientEmails, string meetingId = null, int sequence = 0)
+            string joinUrl, string password, List<string> recipientEmails, string platform = "Zoom", string meetingId = null, int sequence = 0)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
 
             string subject = "Invitation: " + topic;
-            string body = BuildInviteBody(topic, startDateTime, durationMinutes, joinUrl, meetingId, password);
+            string body = BuildInviteBody(topic, startDateTime, durationMinutes, joinUrl, meetingId, password, platform);
 
-            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", sequence);
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", sequence, platform);
             await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
 
@@ -85,6 +85,7 @@ namespace VCBooking.Services
             string joinUrl, string meetingId, string password,
             string reason,
             List<string> recipientEmails,
+            string platform,
             int sequence = 1)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
@@ -92,11 +93,11 @@ namespace VCBooking.Services
             string subject = "Meeting Rescheduled: " + topic;
             string body = BuildRescheduleBody(topic, oldDate, oldFromTime, oldToTime,
                                               newDate, newFromTime, newToTime,
-                                              joinUrl, meetingId, password, reason);
+                                              joinUrl, meetingId, password, reason, platform);
 
             DateTime startDateTime = newDate.Date.Add(newFromTime);
             int durationMinutes = (int)(newToTime - newFromTime).TotalMinutes;
-            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", sequence);
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, joinUrl, meetingId, "REQUEST", sequence, platform);
 
             await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
@@ -112,6 +113,7 @@ namespace VCBooking.Services
             List<string> recipientEmails,
             string cancelledBy,
             bool isAdmin,
+            string platform = "Zoom",
             int sequence = 2)
         {
             if (recipientEmails == null || recipientEmails.Count == 0) return;
@@ -121,7 +123,7 @@ namespace VCBooking.Services
 
             DateTime startDateTime = meetingDate.Date.Add(fromTime);
             int durationMinutes = (int)(toTime - fromTime).TotalMinutes;
-            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, null, meetingId, "CANCEL", sequence);
+            byte[] icsBytes = BuildIcsContent(topic, startDateTime, durationMinutes, null, meetingId, "CANCEL", sequence, platform);
 
             await SendToAllAsync(subject, body, recipientEmails, icsBytes);
         }
@@ -198,10 +200,10 @@ namespace VCBooking.Services
         // ─── HTML body builders ───────────────────────────────────────────────────
 
         private string BuildInviteBody(string topic, DateTime startDateTime, int durationMinutes,
-            string joinUrl, string meetingId, string password)
+            string joinUrl, string meetingId, string password, string platform)
         {
             var sb = new StringBuilder();
-            OpenCard(sb, "#0d6efd", "Video Conference Invitation",
+            OpenCard(sb, "#0d6efd", platform + " Invitation",
                 "You have been invited to a video conference meeting.");
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
             Row(sb, "Topic", topic);
@@ -210,7 +212,7 @@ namespace VCBooking.Services
                 startDateTime.ToString("hh:mm tt"),
                 startDateTime.AddMinutes(durationMinutes).ToString("hh:mm tt")));
             sb.AppendLine("</table>");
-            JoinButton(sb, joinUrl);
+            JoinButton(sb, joinUrl, platform);
             MeetingInfo(sb, meetingId, password);
             CloseCard(sb);
             return sb.ToString();
@@ -220,7 +222,7 @@ namespace VCBooking.Services
             string topic,
             DateTime oldDate, TimeSpan oldFrom, TimeSpan oldTo,
             DateTime newDate, TimeSpan newFrom, TimeSpan newTo,
-            string joinUrl, string meetingId, string password, string reason)
+            string joinUrl, string meetingId, string password, string reason, string platform)
         {
             var sb = new StringBuilder();
             OpenCard(sb, "#fd7e14", "Meeting Rescheduled",
@@ -238,7 +240,7 @@ namespace VCBooking.Services
             if (!string.IsNullOrWhiteSpace(reason))
                 Row(sb, "Reason", reason);
             sb.AppendLine("</table>");
-            JoinButton(sb, joinUrl);
+            JoinButton(sb, joinUrl, platform);
             MeetingInfo(sb, meetingId, password);
             CloseCard(sb);
             return sb.ToString();
@@ -264,7 +266,7 @@ namespace VCBooking.Services
 
             // ✅ Use dynamic text in UI
             OpenCard(sb, "#dc3545", "Meeting Cancelled",
-                $"The following meeting has been cancelled by <b>{cancelledText}</b>.");
+                string.Format("The following meeting has been cancelled by <b>{0}</b>.", cancelledText));
 
             sb.AppendLine("<table style='width:100%;border-collapse:collapse;'>");
 
@@ -337,16 +339,16 @@ namespace VCBooking.Services
 </tr>", label, value);
         }
 
-        private void JoinButton(StringBuilder sb, string joinUrl)
+        private void JoinButton(StringBuilder sb, string joinUrl, string platform)
         {
             if (string.IsNullOrWhiteSpace(joinUrl)) return;
             sb.AppendFormat(@"
 <div style='margin:25px 0;text-align:center;'>
   <a href='{0}' style='background:#0d6efd;color:#fff;padding:13px 28px;text-decoration:none;
      border-radius:25px;font-weight:bold;display:inline-block;font-size:1em;'>
-    &#128248;&nbsp; Join Zoom Meeting
+    &#128248;&nbsp; Join {1} Meeting
   </a>
-</div>", joinUrl);
+</div>", joinUrl, platform);
         }
 
         private void MeetingInfo(StringBuilder sb, string meetingId, string password)
@@ -362,7 +364,7 @@ namespace VCBooking.Services
         // ─── ICS Helper ───────────────────────────────────────────────────────────
 
         private byte[] BuildIcsContent(string topic, DateTime startDateTime, int durationMinutes,
-            string joinUrl, string meetingId, string method, int sequence)
+            string joinUrl, string meetingId, string method, int sequence, string platform)
         {
             var sb = new StringBuilder();
             string dtStamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ");
@@ -381,8 +383,8 @@ namespace VCBooking.Services
             sb.AppendLine("DTSTART:" + dtStart);
             sb.AppendLine("DTEND:" + dtEnd);
             sb.AppendLine("SUMMARY:" + topic);
-            sb.AppendLine("DESCRIPTION:Video Conference Meeting.\\nJoin Zoom Meeting: " + (joinUrl ?? "N/A"));
-            sb.AppendLine("LOCATION:Zoom Meeting");
+            sb.AppendLine("DESCRIPTION:Video Conference Meeting.\\nJoin " + platform + " Meeting: " + (joinUrl ?? "N/A"));
+            sb.AppendLine("LOCATION:" + platform + " Meeting");
             sb.AppendLine("ORGANIZER;CN=VC System:mailto:" + _fromEmail);
             sb.AppendLine("SEQUENCE:" + sequence);
             sb.AppendLine("STATUS:" + (method == "CANCEL" ? "CANCELLED" : "CONFIRMED"));

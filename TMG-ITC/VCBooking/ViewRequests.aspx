@@ -4,6 +4,8 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head runat="server">
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <title>My VC Requests</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
@@ -24,13 +26,14 @@
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h4 class="fw-bold text-primary mb-0">My VC Requests</h4>
 
-                <a href="EmployeeDashboard.aspx" class="btn btn-outline-secondary btn-sm">&#8592; Back</a>
+                <a href="EmployeeDashboard.aspx" class="btn btn-outline-secondary btn-sm">&lt; Back</a>
             </div>
 
             <asp:GridView ID="gvRequests" runat="server"
-                CssClass="table table-bordered"
+                CssClass="table table-bordered table-hover text-center align-middle mb-0"
                 AutoGenerateColumns="false"
-                OnRowCommand="gvRequests_RowCommand">
+                OnRowCommand="gvRequests_RowCommand"
+                OnRowDataBound="gvRequests_RowDataBound">
 
                 <Columns>
                     <asp:BoundField DataField="VCId" HeaderText="VC ID" />
@@ -51,6 +54,8 @@
                                 CssClass="btn btn-danger btn-sm"
                                 CommandName="CancelMeeting"
                                 CommandArgument='<%# Eval("VCId") %>'
+                                UseSubmitBehavior="false"
+                                CausesValidation="false"
                                 Visible='<%# Eval("VCStatus").ToString() != "Cancelled" && Eval("VCStatus").ToString() != "Deleted" %>' />
                         </ItemTemplate>
                     </asp:TemplateField>
@@ -58,28 +63,46 @@
                 </Columns>
             </asp:GridView>
 
+            <!-- Empty State Message -->
+            <div id="divEmptyState" runat="server" visible="false" class="text-center py-5 bg-light border rounded">
+                <div class="mb-3">
+                    <span style="font-size: 3rem; color: #6c757d;">&#128197;</span>
+                </div>
+                <h5 class="text-secondary fw-bold">No Meeting Requests Found</h5>
+                <p class="text-muted">You haven't made any video conference requests yet.</p>
+                <a href="CreateVCRequest.aspx" class="btn btn-primary mt-2">Create New Request</a>
+            </div>
+
         </div>
 
-        <!-- 🔥 CANCEL MODAL -->
+        <!-- Cancel Modal -->
         <div class="modal fade" id="cancelModal" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content p-4">
-
-                    <h5 class="text-danger">Cancel Meeting</h5>
-
-                    <asp:TextBox ID="txtCancelReason" runat="server"
-                        CssClass="form-control mt-2"
-                        TextMode="MultiLine"
-                        Rows="3"
-                        placeholder="Enter reason (optional)" />
-
-                    <div class="mt-3 text-end">
-                        <asp:Button ID="btnConfirmCancel" runat="server"
-                            Text="Confirm"
-                            CssClass="btn btn-danger"
-                            OnClick="btnConfirmCancel_Click" />
+                <div class="modal-content shadow">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">Cancel Meeting</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
-
+                    <div class="modal-body text-start">
+                        <p>Are you sure you want to cancel this meeting?</p>
+                        <div class="mb-3">
+                            <label class="form-label">Reason for Cancellation:</label>
+                            <asp:TextBox ID="txtCancelReason" runat="server"
+                                CssClass="form-control"
+                                TextMode="MultiLine"
+                                Rows="3"
+                                placeholder="Enter reason (optional)"></asp:TextBox>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <asp:Button ID="btnConfirmCancel" runat="server"
+                            Text="Confirm Cancellation"
+                            CssClass="btn btn-danger"
+                            OnClick="btnConfirmCancel_Click"
+                            UseSubmitBehavior="false"
+                            OnClientClick="var btn=this; setTimeout(function(){ btn.disabled=true; btn.value='Cancelling...'; },10);" />
+                    </div>
                 </div>
             </div>
         </div>

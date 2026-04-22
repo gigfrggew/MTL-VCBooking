@@ -39,3 +39,12 @@ bld/
 *.suo
 *.csx
 *.pdb
+
+# Secrets and Data
+TMG-ITC/App_Data/
+App_Data/
+google-key.json
+
+# Build Logs
+build_errors.log
+nuget.exe

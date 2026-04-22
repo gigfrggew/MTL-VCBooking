@@ -39,6 +39,10 @@ namespace VCBooking
                 LoadDropdown("SELECT LocationName,LocationId from dbo.Location_Master WHERE Status='Active'",
                     ddlLocation, "LocationName", "LocationId", "-- Select Location --");
 
+                // Initialize Account dropdown
+                ddlVCAccount.Items.Clear();
+                ddlVCAccount.Items.Add(new ListItem("-- Select Account --", ""));
+
                 // 2. Populate Hour Dropdown
                 ddlFromHour.Items.Clear();
                 ddlFromHour.Items.Add(new ListItem("Hr", ""));
@@ -248,7 +252,6 @@ namespace VCBooking
                                 SELECT COUNT(*) FROM VCRequestHeader
                                 WHERE VCAccountId = @VCAccountId
                                 AND VCStatus NOT IN ('Cancelled', 'Completed')
-                                AND CAST(VCDate AS DATE) = CAST(@NewFromTime AS DATE)
                                 AND (@NewFromTime < ToTime AND @NewToTime > FromTime)";
 
                             SqlCommand cmdCheck = new SqlCommand(overlapCheckQuery, conn, transaction);
@@ -306,29 +309,63 @@ namespace VCBooking
                                 cmdParticipant.ExecuteNonQuery();
                             }
 
-                            var zoomService = new VCBooking.Services.ZoomService(ddlVCAccount.SelectedValue);
-                            var zoomResponse = await zoomService.CreateMeetingAsync(
-                                txtTopic.Text.Trim(),
-                                fullFromDateTime,
-                                (int)(fullToDateTime - fullFromDateTime).TotalMinutes
-                            );
+                            string platform = ddlVCType.SelectedItem.Text;
 
-                            meetingId = zoomResponse.id;
-                            joinUrl = zoomResponse.join_url;
-                            startUrl = zoomResponse.start_url;
-                            password = zoomResponse.password;
+                            if (platform.Contains("Zoom"))
+                            {
+                                var zoomService = new VCBooking.Services.ZoomService(ddlVCAccount.SelectedValue);
+                                var zoomResponse = await zoomService.CreateMeetingAsync(
+                                    txtTopic.Text.Trim(),
+                                    fullFromDateTime,
+                                    (int)(fullToDateTime - fullFromDateTime).TotalMinutes
+                                );
 
-                            SqlCommand cmdUpdateZoom = new SqlCommand(@"
+                                meetingId = zoomResponse.id;
+                                joinUrl = zoomResponse.join_url;
+                                startUrl = zoomResponse.start_url;
+                                password = zoomResponse.password;
+                                platform = "Zoom";
+                            }
+                            else if (platform.Contains("Google") || platform.Contains("Teams")) // Handling "Teams" too if it hasn't been renamed yet
+                            {
+                                // Fetch the pre-configured room URL from the database
+                                string roomUrl = "";
+                                using (SqlConnection connRoom = new SqlConnection(ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString))
+                                {
+                                    SqlCommand cmdRoom = new SqlCommand("SELECT ISNULL(MeetingRoomUrl, '') FROM VC_Account_Master WHERE VCAccountId = @Id", connRoom);
+                                    cmdRoom.Parameters.AddWithValue("@Id", ddlVCAccount.SelectedValue);
+                                    connRoom.Open();
+                                    object roomResult = cmdRoom.ExecuteScalar();
+                                    if (roomResult != null) roomUrl = roomResult.ToString();
+                                }
+
+                                var googleService = new VCBooking.Services.GoogleMeetService(ddlVCAccount.SelectedValue);
+                                var googleResponse = await googleService.CreateMeetingAsync(
+                                    txtTopic.Text.Trim(),
+                                    fullFromDateTime,
+                                    (int)(fullToDateTime - fullFromDateTime).TotalMinutes,
+                                    roomUrl
+                                );
+
+                                meetingId = googleResponse.id;
+                                joinUrl = googleResponse.join_url;
+                                startUrl = googleResponse.join_url;
+                                password = "";
+                                platform = "Google Meet";
+                            }
+
+                            SqlCommand cmdUpdateMeeting = new SqlCommand(@"
                                 UPDATE VCRequestHeader
                                 SET MeetingId=@MeetingId, JoinUrl=@JoinUrl, HostUrl=@HostUrl,
-                                    MeetingPassword=@MeetingPassword, Platform='Zoom', APIStatus='Success', VCStatus='Booked'
+                                    MeetingPassword=@MeetingPassword, Platform=@Platform, APIStatus='Success', VCStatus='Booked'
                                 WHERE VCId=@VCId", conn, transaction);
-                            cmdUpdateZoom.Parameters.AddWithValue("@MeetingId", meetingId);
-                            cmdUpdateZoom.Parameters.AddWithValue("@JoinUrl", joinUrl);
-                            cmdUpdateZoom.Parameters.AddWithValue("@HostUrl", startUrl);
-                            cmdUpdateZoom.Parameters.AddWithValue("@MeetingPassword", password);
-                            cmdUpdateZoom.Parameters.AddWithValue("@VCId", newVCId);
-                            cmdUpdateZoom.ExecuteNonQuery();
+                            cmdUpdateMeeting.Parameters.AddWithValue("@MeetingId", meetingId);
+                            cmdUpdateMeeting.Parameters.AddWithValue("@JoinUrl", joinUrl);
+                            cmdUpdateMeeting.Parameters.AddWithValue("@HostUrl", startUrl);
+                            cmdUpdateMeeting.Parameters.AddWithValue("@MeetingPassword", password);
+                            cmdUpdateMeeting.Parameters.AddWithValue("@Platform", platform);
+                            cmdUpdateMeeting.Parameters.AddWithValue("@VCId", newVCId);
+                            cmdUpdateMeeting.ExecuteNonQuery();
 
                             transaction.Commit();
 
@@ -337,11 +374,11 @@ namespace VCBooking
                             {
                                 var emailService = new VCBooking.Services.EmailService(ddlVCAccount.SelectedValue);
                                 await emailService.SendMeetingInviteAsync(txtTopic.Text.Trim(), fullFromDateTime, 
-                                    (int)(fullToDateTime - fullFromDateTime).TotalMinutes, joinUrl, password, participantEmails);
+                                    (int)(fullToDateTime - fullFromDateTime).TotalMinutes, joinUrl, password, participantEmails, platform);
                             }
                             catch (Exception exEmail) { System.Diagnostics.Debug.WriteLine("Email Error: " + exEmail.Message); }
 
-                            Response.Redirect("ViewRequests.aspx?success=1");
+                            hdnShowSuccess.Value = "1";
                         }
                         catch (Exception ex)
                         {
@@ -393,7 +430,6 @@ namespace VCBooking
                 FROM VCRequestHeader h
                 WHERE h.VCAccountId = a.VCAccountId
                 AND h.VCStatus NOT IN ('Cancelled', 'Completed')
-                AND CAST(h.VCDate AS DATE) = CAST(@NewFromTime AS DATE)
                 AND (@NewFromTime < h.ToTime AND @NewToTime > h.FromTime)
             )";
 
@@ -500,9 +536,9 @@ namespace VCBooking
             {
                 await conn.OpenAsync();
 
-                // ✅ STEP 1: Include VCAccountId
+                // ✅ STEP 1: Include VCAccountId and Platform
                 string query = @"
-            SELECT VCId, MeetingId, VCAccountId
+            SELECT VCId, MeetingId, VCAccountId, Platform
             FROM VCRequestHeader
             WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
             AND VCStatus IN ('Booked', 'Rescheduled')
@@ -511,15 +547,16 @@ namespace VCBooking
                 SqlCommand cmd = new SqlCommand(query, conn);
                 SqlDataReader reader = await cmd.ExecuteReaderAsync();
 
-                // ✅ STEP 2: Store 3 values
-                var expiredMeetings = new List<Tuple<string, string, string>>();
+                // ✅ STEP 2: Store VCAccountId and Platform
+                var expiredMeetings = new List<Tuple<string, string, string, string>>();
 
                 while (await reader.ReadAsync())
                 {
-                    expiredMeetings.Add(new Tuple<string, string, string>(
+                    expiredMeetings.Add(new Tuple<string, string, string, string>(
                         reader["VCId"].ToString(),          // VCId
                         reader["MeetingId"].ToString(),     // MeetingId
-                        reader["VCAccountId"].ToString()    // VCAccountId
+                        reader["VCAccountId"].ToString(),    // VCAccountId
+                        reader["Platform"].ToString()       // Platform
                     ));
                 }
 
@@ -529,6 +566,7 @@ namespace VCBooking
                 // var zoomService = new VCBooking.Services.ZoomService();
 
                 // ✅ STEP 3: Create ZoomService inside loop
+                // ✅ STEP 3: Create Service inside loop
                 foreach (var meeting in expiredMeetings)
                 {
                     try
@@ -536,10 +574,18 @@ namespace VCBooking
                         string vcId = meeting.Item1;
                         string meetingId = meeting.Item2;
                         string vcAccountId = meeting.Item3;
+                        string platform = meeting.Item4;
 
-                        var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
-
-                        await zoomService.DeleteMeetingAsync(meetingId);
+                        if (platform == "Zoom")
+                        {
+                            var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
+                            await zoomService.DeleteMeetingAsync(meetingId);
+                        }
+                        else if (platform == "Google Meet")
+                        {
+                            var googleService = new VCBooking.Services.GoogleMeetService(vcAccountId);
+                            await googleService.DeleteMeetingAsync(meetingId);
+                        }
 
                         string updateQuery = @"
                     UPDATE VCRequestHeader

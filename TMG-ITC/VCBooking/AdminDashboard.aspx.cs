@@ -43,9 +43,9 @@ namespace VCBooking
                 {
                     await con.OpenAsync();
 
-                    // ✅ STEP 1: Include VCAccountId
+                    // ✅ STEP 1: Include VCAccountId and Platform
                     string query = @"
-                SELECT VCId, MeetingId, VCAccountId
+                SELECT VCId, MeetingId, VCAccountId, Platform
                 FROM VCRequestHeader
                 WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
                 AND VCStatus IN ('Booked', 'Rescheduled')
@@ -54,15 +54,16 @@ namespace VCBooking
                     SqlCommand cmd = new SqlCommand(query, con);
                     SqlDataReader reader = await cmd.ExecuteReaderAsync();
 
-                    // ✅ STEP 2: Store VCAccountId also
-                    var expiredMeetings = new List<Tuple<string, string, string>>();
+                    // ✅ STEP 2: Store VCAccountId and Platform
+                    var expiredMeetings = new List<Tuple<string, string, string, string>>();
 
                     while (await reader.ReadAsync())
                     {
-                        expiredMeetings.Add(new Tuple<string, string, string>(
+                        expiredMeetings.Add(new Tuple<string, string, string, string>(
                             reader["VCId"].ToString(),          // Item1
                             reader["MeetingId"].ToString(),     // Item2
-                            reader["VCAccountId"].ToString()    // Item3
+                            reader["VCAccountId"].ToString(),    // Item3
+                            reader["Platform"].ToString()       // Item4
                         ));
                     }
 
@@ -79,10 +80,18 @@ namespace VCBooking
                             string vcId = meeting.Item1;
                             string meetingId = meeting.Item2;
                             string vcAccountId = meeting.Item3;
+                            string platform = meeting.Item4;
 
-                            var zoomService = new Services.ZoomService(vcAccountId);
-
-                            await zoomService.DeleteMeetingAsync(meetingId);
+                            if (platform == "Zoom")
+                            {
+                                var zoomService = new Services.ZoomService(vcAccountId);
+                                await zoomService.DeleteMeetingAsync(meetingId);
+                            }
+                            else if (platform == "Google Meet")
+                            {
+                                var googleService = new Services.GoogleMeetService(vcAccountId);
+                                await googleService.DeleteMeetingAsync(meetingId);
+                            }
 
                             string updateQuery = @"
                         UPDATE VCRequestHeader
@@ -257,11 +266,27 @@ namespace VCBooking
                 var details = GetBaseMeetingDetails(vcId);
                 if (details == null) return;
 
-                // 2. Delete Zoom Meeting
-                var zoom = new Services.ZoomService(details.VCAccountId.ToString());
+                // 2. Delete Meeting via API
                 if (!string.IsNullOrEmpty(details.MeetingId))
                 {
-                    await zoom.DeleteMeetingAsync(details.MeetingId);
+                    try
+                    {
+                        string platform = details.Platform;
+                        if (platform == "Zoom")
+                        {
+                            var zoom = new Services.ZoomService(details.VCAccountId.ToString());
+                            await zoom.DeleteMeetingAsync(details.MeetingId);
+                        }
+                        else if (platform == "Google Meet")
+                        {
+                            var google = new Services.GoogleMeetService(details.VCAccountId.ToString());
+                            await google.DeleteMeetingAsync(details.MeetingId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine("API Deletion Failed during Cancel: " + ex.Message);
+                    }
                 }
 
                 // 3. Update DB
@@ -270,8 +295,7 @@ namespace VCBooking
                 // 4. Notify participants
                 var emailService = new EmailService(details.VCAccountId.ToString());
                 int sequence = (int)DateTime.UtcNow.Subtract(new DateTime(2025, 1, 1)).TotalSeconds;
-
-                string cancelledBy = Session["UserName"]?.ToString();
+                string cancelledBy = Session["UserName"] != null ? Session["UserName"].ToString() : null;
                 bool isAdmin = Session["IsAdmin"] != null && (bool)Session["IsAdmin"];
 
                 await emailService.SendCancellationNotificationAsync(
@@ -284,6 +308,7 @@ namespace VCBooking
                 details.Participants,
                 cancelledBy, 
                 isAdmin,       
+                details.Platform,
                 sequence      
                  );
 
@@ -321,13 +346,23 @@ namespace VCBooking
                     }
                 }
 
-                // 2. Update Zoom
-                var zoom = new Services.ZoomService(details.VCAccountId.ToString());
+                // 2. Update Meeting via API
                 if (!string.IsNullOrEmpty(details.MeetingId))
                 {
                     DateTime start = newDate.Add(newFrom);
                     int duration = (int)(newTo - newFrom).TotalMinutes;
-                    await zoom.UpdateMeetingAsync(details.MeetingId, details.Topic, start, duration);
+                    string platform = details.Platform;
+
+                    if (platform == "Zoom")
+                    {
+                        var zoom = new Services.ZoomService(details.VCAccountId.ToString());
+                        await zoom.UpdateMeetingAsync(details.MeetingId, details.Topic, start, duration);
+                    }
+                    else if (platform == "Google Meet")
+                    {
+                        var google = new Services.GoogleMeetService(details.VCAccountId.ToString());
+                        await google.UpdateMeetingAsync(details.MeetingId, details.Topic, start, (int)(newTo - newFrom).TotalMinutes);
+                    }
                 }
 
                 // 3. Update DB
@@ -341,7 +376,7 @@ namespace VCBooking
                     details.Date, details.FromTime, details.ToTime,
                     newDate, newFrom, newTo,
                     details.JoinUrl, details.MeetingId, details.Password,
-                    reason, details.Participants, sequence);
+                    reason, details.Participants, details.Platform, sequence);
 
                 LoadMeetings();
             }
@@ -355,7 +390,7 @@ namespace VCBooking
         {
             try
             {
-                string vcId = hfDeleteVCId.Value;
+                string vcId = hfDeleteVCId.Value != null ? hfDeleteVCId.Value.Trim() : "";
                 if (string.IsNullOrEmpty(vcId)) return;
 
                 // Re-check status before delete (backend validation)
@@ -366,11 +401,11 @@ namespace VCBooking
                     cmd.Parameters.AddWithValue("@Id", vcId);
                     con.Open();
                     object result = cmd.ExecuteScalar();
-                    string status = result != null ? result.ToString() : null;
+                    string status = result != null ? result.ToString().Trim() : null;
 
                     if (status != "Completed" && status != "Cancelled")
                     {
-                        Response.Write("<script>alert('Error: Only Completed or Cancelled meetings can be deleted.');</script>");
+                        Response.Write("<script>alert('Error: Only Completed or Cancelled meetings can be deleted. (VCId: " + vcId + ", Status: " + (status ?? "NULL") + ")');</script>");
                         return; // prevent unsafe delete
                     }
                 }
@@ -430,8 +465,24 @@ namespace VCBooking
                 var details = GetBaseMeetingDetails(vcId);
                 if (details != null && !string.IsNullOrEmpty(details.MeetingId))
                 {
-                    await new Services.ZoomService(details.VCAccountId.ToString())
-                        .DeleteMeetingAsync(details.MeetingId);
+                    try
+                    {
+                        string platform = details.Platform;
+                        if (platform == "Zoom")
+                        {
+                            await new Services.ZoomService(details.VCAccountId.ToString())
+                                .DeleteMeetingAsync(details.MeetingId);
+                        }
+                        else if (platform == "Google Meet")
+                        {
+                            await new Services.GoogleMeetService(details.VCAccountId.ToString())
+                                .DeleteMeetingAsync(details.MeetingId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine("API Deletion Failed: " + ex.Message);
+                    }
                 }
 
                 using (SqlConnection con = new SqlConnection(ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString))
@@ -506,7 +557,7 @@ namespace VCBooking
         {
             using (SqlConnection con = new SqlConnection(ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString))
             {
-                string query = "SELECT Topic, VCDate, FromTime, ToTime, MeetingId, JoinUrl, MeetingPassword AS Password, VCAccountId FROM VCRequestHeader WHERE VCId = @Id";
+                string query = "SELECT Topic, VCDate, FromTime, ToTime, MeetingId, JoinUrl, MeetingPassword AS Password, VCAccountId, Platform FROM VCRequestHeader WHERE VCId = @Id";
                 SqlCommand cmd = new SqlCommand(query, con);
                 cmd.Parameters.AddWithValue("@Id", vcId);
                 con.Open();
@@ -523,6 +574,7 @@ namespace VCBooking
                         d.JoinUrl = reader["JoinUrl"].ToString();
                         d.Password = reader["Password"].ToString();
                         d.VCAccountId = reader["VCAccountId"];
+                        d.Platform = reader["Platform"].ToString();
                         d.Participants = GetParticipants(vcId);
                         return d;
                     }

@@ -3,11 +3,15 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head runat="server">
+    <meta charset="utf-8" />
     <title>Create VC Request</title>
 
-    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+
+    <!-- Bootstrap JS in head so it's available before inline scripts fire -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
     <style>
         body { font-family: 'Inter', sans-serif; }
         #processingOverlay {
@@ -31,15 +35,31 @@
         }
         .spinner-lg { width: 3.5rem; height: 3.5rem; }
     </style>
+
+    <script>
+        function showProcessingOverlay() {
+            document.getElementById('processingOverlay').classList.add('show');
+        }
+
+        // Runs after full page is ready — checks the hidden field set by server
+        document.addEventListener('DOMContentLoaded', function () {
+            var hdn = document.getElementById('<%= hdnShowSuccess.ClientID %>');
+            if (hdn && hdn.value === '1') {
+                document.getElementById('processingOverlay').classList.remove('show');
+                new bootstrap.Modal(document.getElementById('successModal')).show();
+            }
+        });
+    </script>
 </head>
 <body class="bg-light">
 
     <form id="form1" runat="server">
         <asp:ScriptManager runat="server" />
+        <asp:HiddenField ID="hdnShowSuccess" runat="server" Value="0" />
         <asp:UpdatePanel runat="server" ID="UpdatePanel1">
             <ContentTemplate>
 
-        <div class="container mt-5 mb-5">
+        <div class="container mt-5 mb-5 pb-5">
 
             <div class="card shadow-lg p-4">
 
@@ -138,28 +158,30 @@
 
                     <!-- LEFT COLUMN: VC Type, Account, Location stacked -->
                     <div class="col-md-4">
+                        <div style="min-height: 250px;"> <!-- Added min-height to stabilize and provide room -->
 
-                        <div class="mb-2">
-                            <asp:Label runat="server" ID="lblVCType" Text="VC Type" CssClass="form-label" />
-                            <asp:DropDownList runat="server" ID="ddlVCType"
-                                AutoPostBack="true"
-                                OnSelectedIndexChanged="ddlVCType_SelectedIndexChanged"
-                                CssClass="form-select form-select-sm">
-                            </asp:DropDownList>
+                            <div class="mb-3">
+                                <asp:Label runat="server" ID="lblVCType" Text="VC Type" CssClass="form-label" />
+                                <asp:DropDownList runat="server" ID="ddlVCType"
+                                    AutoPostBack="true"
+                                    OnSelectedIndexChanged="ddlVCType_SelectedIndexChanged"
+                                    CssClass="form-select">
+                                </asp:DropDownList>
+                            </div>
+
+                            <div class="mb-3">
+                                <asp:Label runat="server" ID="lblVCAccount" Text="VC Account" CssClass="form-label" />
+                                <asp:DropDownList runat="server" ID="ddlVCAccount" CssClass="form-select">
+                                </asp:DropDownList>
+                            </div>
+
+                            <div class="mb-3">
+                                <asp:Label runat="server" ID="lblLocation" Text="Location" CssClass="form-label" />
+                                <asp:DropDownList runat="server" ID="ddlLocation" CssClass="form-select">
+                                </asp:DropDownList>
+                            </div>
+
                         </div>
-
-                        <div class="mb-2">
-                            <asp:Label runat="server" ID="lblVCAccount" Text="VC Account" CssClass="form-label" />
-                            <asp:DropDownList runat="server" ID="ddlVCAccount" CssClass="form-select form-select-sm">
-                            </asp:DropDownList>
-                        </div>
-
-                        <div class="mb-2">
-                            <asp:Label runat="server" ID="lblLocation" Text="Location" CssClass="form-label" />
-                            <asp:DropDownList runat="server" ID="ddlLocation" CssClass="form-select form-select-sm">
-                            </asp:DropDownList>
-                        </div>
-
                     </div>
 
                     <!-- RIGHT COLUMN: Booked Meetings Preview -->
@@ -167,7 +189,7 @@
                         <label class="form-label fw-semibold text-secondary">
                             <i class="bi bi-calendar2-check"></i> Booked Meetings on Selected Slot
                         </label>
-                        <div class="border rounded p-2 bg-white" style="min-height: 160px; max-height: 270px; overflow-y: auto;">
+                        <div class="border rounded p-2 bg-white" style="min-height: 200px; max-height: 270px; overflow-y: auto;">
                             <asp:GridView runat="server"
                                 ID="gvBookedSlots"
                                 CssClass="table table-sm table-bordered mb-0"
@@ -257,12 +279,25 @@
         </div>
     </div>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        function showProcessingOverlay() {
-            document.getElementById('processingOverlay').classList.add('show');
-        }
-    </script>
+    <!-- Meeting Booked Success Modal -->
+    <div class="modal fade" id="successModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow" style="border-radius:16px; border:none;">
+                <div class="modal-header border-0 pb-0">
+                    <button type="button" class="btn-close" onclick="window.location='EmployeeDashboard.aspx';" title="Go to Dashboard"></button>
+                </div>
+                <div class="modal-body text-center px-5 pb-4">
+                    <div class="mb-3" style="color:#198754;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+                        </svg>
+                    </div>
+                    <h4 class="fw-bold mb-2">Meeting Booked Successfully!</h4>
+                    <p class="text-secondary mb-4">Your VC request has been submitted and a Zoom meeting has been scheduled. Invites have been sent to all participants.</p>
+                    <a href="ViewRequests.aspx" class="btn btn-success btn-lg px-5">View My Requests</a>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

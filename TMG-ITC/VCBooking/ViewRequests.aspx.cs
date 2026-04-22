@@ -4,6 +4,7 @@ using System.Configuration;
 using System.Data;
 using System.Data.SqlClient;
 using System.Web.UI;
+using System.Web.UI.WebControls;
 using VCBooking.Services;
 
 namespace VCBooking
@@ -26,7 +27,7 @@ namespace VCBooking
         protected void LoadRequests()
         {
             string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
-            string currentUser = Session["UserName"]?.ToString();
+            string currentUser = Session["UserName"] != null ? Session["UserName"].ToString() : null;
 
             using (SqlConnection conn = new SqlConnection(connStr))
             {
@@ -58,64 +59,126 @@ namespace VCBooking
                 DataTable dt = new DataTable();
                 da.Fill(dt);
 
-                gvRequests.DataSource = dt;
-                gvRequests.DataBind();
+                if (dt.Rows.Count > 0)
+                {
+                    gvRequests.DataSource = dt;
+                    gvRequests.DataBind();
+                    gvRequests.Visible = true;
+                    divEmptyState.Visible = false;
+                }
+                else
+                {
+                    gvRequests.Visible = false;
+                    divEmptyState.Visible = true;
+                }
             }
         }
 
-        // 🔥 CANCEL BUTTON CLICK (open modal)
+        // Row data bound — color-code the Status column with Bootstrap badges
+        protected void gvRequests_RowDataBound(object sender, GridViewRowEventArgs e)
+        {
+            if (e.Row.RowType == DataControlRowType.DataRow)
+            {
+                string status = DataBinder.Eval(e.Row.DataItem, "VCStatus").ToString();
+
+                string badgeClass = "badge bg-secondary";
+                switch (status)
+                {
+                    case "Booked":      badgeClass = "badge bg-success"; break;
+                    case "New":        badgeClass = "badge bg-primary"; break;
+                    case "Rescheduled": badgeClass = "badge bg-info text-dark"; break;
+                    case "Cancelled":  badgeClass = "badge bg-danger"; break;
+                    case "Completed":  badgeClass = "badge bg-dark"; break;
+                }
+
+                // Status is the 10th column (index 9, 0-based)
+                int statusColIndex = 9;
+                e.Row.Cells[statusColIndex].Text =
+                    string.Format("<span class='{0}'>{1}</span>", badgeClass, status);
+            }
+        }
+
+        // Cancel button in grid — open the modal
         protected void gvRequests_RowCommand(object sender, System.Web.UI.WebControls.GridViewCommandEventArgs e)
         {
             if (e.CommandName == "CancelMeeting")
             {
                 ViewState["VCId"] = e.CommandArgument.ToString();
 
-                ScriptManager.RegisterStartupScript(this, GetType(), "popup", "showCancelModal();", true);
+                ClientScript.RegisterStartupScript(GetType(), "popup", "showCancelModal();", true);
             }
         }
 
         // 🔥 CONFIRM CANCEL
         protected async void btnConfirmCancel_Click(object sender, EventArgs e)
         {
-            string vcId = ViewState["VCId"].ToString();
-            string reason = txtCancelReason.Text;
-
-            // 1️⃣ Update DB
-            UpdateStatusInDB(vcId, reason);
-
-            // 2️⃣ Get meeting details
-            var details = GetBaseMeetingDetails(vcId);
-
-            if (details != null)
+            try
             {
-                // 3️⃣ Send email
-                var emailService = new EmailService(details.VCAccountId.ToString());
+                string vcId = ViewState["VCId"].ToString();
+                string reason = txtCancelReason.Text;
 
-                int sequence = (int)DateTime.UtcNow
-                    .Subtract(new DateTime(2025, 1, 1)).TotalSeconds;
+                // 1️⃣ Get meeting details BEFORE updating DB
+                var details = GetBaseMeetingDetails(vcId);
 
-                string cancelledBy = Session["UserName"]?.ToString();
-                bool isAdmin = Session["IsAdmin"] != null && (bool)Session["IsAdmin"];
+                // 2️⃣ Call the platform API to delete the meeting
+                if (details != null && !string.IsNullOrEmpty(details.MeetingId))
+                {
+                    try
+                    {
+                        if (details.Platform == "Zoom")
+                        {
+                            var zoomService = new VCBooking.Services.ZoomService(details.VCAccountId.ToString());
+                            await zoomService.DeleteMeetingAsync(details.MeetingId);
+                        }
+                        else if (details.Platform == "Google Meet")
+                        {
+                            var googleService = new VCBooking.Services.GoogleMeetService(details.VCAccountId.ToString());
+                            await googleService.DeleteMeetingAsync(details.MeetingId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine("API Deletion Failed during Cancel: " + ex.Message);
+                    }
+                }
 
-                await emailService.SendCancellationNotificationAsync(
-                details.Topic,
-                details.Date,
-                details.FromTime,
-                details.ToTime,
-                details.MeetingId,
-                reason,
-                details.Participants,
-                cancelledBy,
-                isAdmin,
-                sequence
-                 );
+                // 3️⃣ Update DB
+                UpdateStatusInDB(vcId, reason);
+
+                // 4️⃣ Send email notification
+                if (details != null)
+                {
+                    var emailService = new EmailService(details.VCAccountId.ToString());
+
+                    int sequence = (int)DateTime.UtcNow
+                        .Subtract(new DateTime(2025, 1, 1)).TotalSeconds;
+
+                    string cancelledBy = Session["UserName"] != null ? Session["UserName"].ToString() : null;
+                    bool isAdmin = Session["IsAdmin"] != null && (bool)Session["IsAdmin"];
+
+                    await emailService.SendCancellationNotificationAsync(
+                        details.Topic,
+                        details.Date,
+                        details.FromTime,
+                        details.ToTime,
+                        details.MeetingId,
+                        reason,
+                        details.Participants,
+                        cancelledBy,
+                        isAdmin,
+                        details.Platform,
+                        sequence);
+                }
+
+                // 5️⃣ Refresh UI
+                LoadRequests();
+                ClientScript.RegisterStartupScript(GetType(), "msg", "alert('Meeting Cancelled Successfully');", true);
             }
-
-            // 4️⃣ Refresh UI
-            LoadRequests();
-
-            // Optional success alert
-            ScriptManager.RegisterStartupScript(this, GetType(), "msg", "alert('Meeting Cancelled Successfully');", true);
+            catch (Exception ex)
+            {
+                ClientScript.RegisterStartupScript(GetType(), "err",
+                    "alert('Error cancelling meeting: " + ex.Message.Replace("'", "") + "');", true);
+            }
         }
 
         // 🔥 UPDATE DB STATUS
@@ -133,7 +196,7 @@ namespace VCBooking
 
                 SqlCommand cmd = new SqlCommand(query, con);
                 cmd.Parameters.AddWithValue("@Reason", reason);
-                cmd.Parameters.AddWithValue("@By", Session["UserName"]?.ToString());
+                cmd.Parameters.AddWithValue("@By", Session["UserName"] != null ? Session["UserName"].ToString() : null);
                 cmd.Parameters.AddWithValue("@VCId", vcId);
 
                 con.Open();
@@ -148,7 +211,7 @@ namespace VCBooking
             {
                 string query = @"
                 SELECT Topic, VCDate, FromTime, ToTime, MeetingId, JoinUrl, 
-                       MeetingPassword AS Password, VCAccountId 
+                       MeetingPassword AS Password, VCAccountId, Platform 
                 FROM VCRequestHeader 
                 WHERE VCId = @Id";
 
@@ -171,6 +234,7 @@ namespace VCBooking
                             JoinUrl = reader["JoinUrl"].ToString(),
                             Password = reader["Password"].ToString(),
                             VCAccountId = reader["VCAccountId"],
+                            Platform = reader["Platform"].ToString(),
                             Participants = GetParticipants(vcId)
                         };
 
@@ -217,6 +281,7 @@ namespace VCBooking
             public string JoinUrl;
             public string Password;
             public object VCAccountId;
+            public string Platform;
             public List<string> Participants;
         }
     }
