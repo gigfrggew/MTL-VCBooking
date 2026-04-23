@@ -8,6 +8,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web;
+using System.Configuration;
+using System.Data.SqlClient;
 
 namespace VCBooking.Services
 {
@@ -20,31 +22,34 @@ namespace VCBooking.Services
 
         public GoogleMeetService(string vcAccountId)
         {
-            // 1. Load the Service Account Key
-            string jsonPath = HttpContext.Current.Server.MapPath("~/App_Data/google-key.json");
-            if (!File.Exists(jsonPath))
-                throw new Exception("Google key file missing in App_Data");
+            // ✅ Load credentials from DB instead of JSON
+            string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
 
-            string json = File.ReadAllText(jsonPath);
-            dynamic keyData = JsonConvert.DeserializeObject(json);
-
-            _serviceAccountEmail = keyData.client_email;
-            _privateKey = keyData.private_key;
-
-            // 2. Fetch the specific Gmail address for this account from DB
-            string connStr = System.Configuration.ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
-            using (System.Data.SqlClient.SqlConnection conn = new System.Data.SqlClient.SqlConnection(connStr))
+            using (SqlConnection conn = new SqlConnection(connStr))
             {
                 conn.Open();
-                System.Data.SqlClient.SqlCommand cmd = new System.Data.SqlClient.SqlCommand(
-                    "SELECT VC_Email FROM VC_Account_Master WHERE VCAccountId = @Id", conn);
+
+                SqlCommand cmd = new SqlCommand(
+                    "SELECT GoogleClientEmail, GooglePrivateKey, VC_Email FROM VC_Account_Master WHERE VCAccountId = @Id", conn);
+
                 cmd.Parameters.AddWithValue("@Id", vcAccountId);
-                object result = cmd.ExecuteScalar();
-                
-                if (result != null && !string.IsNullOrEmpty(result.ToString()))
-                    _calendarId = result.ToString();
+
+                SqlDataReader reader = cmd.ExecuteReader();
+
+                if (reader.Read())
+                {
+                    _serviceAccountEmail = reader["GoogleClientEmail"].ToString();
+                    _privateKey = reader["GooglePrivateKey"].ToString();
+
+                    // 🔥 IMPORTANT: Fix newline formatting
+                    _privateKey = _privateKey.Replace("\\n", "\n");
+
+                    _calendarId = reader["VC_Email"].ToString();
+                }
                 else
-                    throw new Exception("Google Account Email not found in VC_Account_Master for ID: " + vcAccountId);
+                {
+                    throw new Exception("Google credentials not found in VC_Account_Master");
+                }
             }
         }
 
@@ -52,6 +57,7 @@ namespace VCBooking.Services
         {
             var header = new { alg = "RS256", typ = "JWT" };
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
             var claimSet = new
             {
                 iss = _serviceAccountEmail,
@@ -88,20 +94,18 @@ namespace VCBooking.Services
         {
             string token = await GetAccessTokenAsync();
 
-            // Note: Service accounts on standard Gmail cannot auto-generate Meet links via API.
-            // We create a plain calendar event and use the pre-configured room URL stored in the DB.
             string meetLink = string.IsNullOrEmpty(roomUrl) ? "" : roomUrl;
 
             var eventData = new
             {
                 summary = topic,
-                description = string.Format("VC Booking: {0}\nJoin: {1}", topic, meetLink),
+                description = $"VC Booking: {topic}\nJoin: {meetLink}",
                 start = new { dateTime = startTime.ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" },
                 end = new { dateTime = startTime.AddMinutes(durationMinutes).ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" }
             };
 
             var json = JsonConvert.SerializeObject(eventData);
-            string url = string.Format("https://www.googleapis.com/calendar/v3/calendars/{0}/events", _calendarId);
+            string url = $"https://www.googleapis.com/calendar/v3/calendars/{_calendarId}/events";
 
             using (var request = new HttpRequestMessage(HttpMethod.Post, url))
             {
@@ -115,6 +119,7 @@ namespace VCBooking.Services
                     throw new Exception("Google Meet Creation Failed: " + responseContent);
 
                 dynamic result = JsonConvert.DeserializeObject(responseContent);
+
                 return new MeetingResponse
                 {
                     id = result.id,
@@ -136,7 +141,7 @@ namespace VCBooking.Services
             };
 
             var json = JsonConvert.SerializeObject(eventData);
-            string url = string.Format("https://www.googleapis.com/calendar/v3/calendars/{0}/events/{1}", _calendarId, eventId);
+            string url = $"https://www.googleapis.com/calendar/v3/calendars/{_calendarId}/events/{eventId}";
 
             using (var request = new HttpRequestMessage(new HttpMethod("PATCH"), url))
             {
@@ -144,6 +149,7 @@ namespace VCBooking.Services
                 request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 var response = await _httpClient.SendAsync(request);
+
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
@@ -155,23 +161,27 @@ namespace VCBooking.Services
         public async Task DeleteMeetingAsync(string eventId)
         {
             string token = await GetAccessTokenAsync();
-            string url = string.Format("https://www.googleapis.com/calendar/v3/calendars/{0}/events/{1}", _calendarId, eventId);
+            string url = $"https://www.googleapis.com/calendar/v3/calendars/{_calendarId}/events/{eventId}";
 
             using (var request = new HttpRequestMessage(HttpMethod.Delete, url))
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
                 var response = await _httpClient.SendAsync(request);
 
-                if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NotFound && response.StatusCode != System.Net.HttpStatusCode.Gone)
+                if (!response.IsSuccessStatusCode &&
+                    response.StatusCode != System.Net.HttpStatusCode.NotFound &&
+                    response.StatusCode != System.Net.HttpStatusCode.Gone)
                 {
                     var error = await response.Content.ReadAsStringAsync();
                     throw new Exception("Google Meet Delete Failed: " + error);
                 }
             }
         }
+
         private string SignWithRsa(string input, string pemKey)
         {
             byte[] data = Encoding.UTF8.GetBytes(input);
+
             using (var rsa = CreateRsaProviderFromPem(pemKey))
             {
                 byte[] signature = rsa.SignData(data, CryptoConfig.MapNameToOID("SHA256"));
@@ -189,10 +199,10 @@ namespace VCBooking.Services
 
             byte[] keyBuffer = Convert.FromBase64String(base64);
 
-            // Manual PKCS#8 parsing for .NET 4.8
             var rsa = new RSACryptoServiceProvider();
             var parameters = DecodePkcs8PrivateKey(keyBuffer);
             rsa.ImportParameters(parameters);
+
             return rsa;
         }
 
@@ -201,37 +211,12 @@ namespace VCBooking.Services
             using (var ms = new MemoryStream(pkcs8))
             using (var reader = new BinaryReader(ms))
             {
-                byte bt = reader.ReadByte();
-                if (bt != 0x30) throw new Exception("Invalid PKCS#8 data");
-                ReadLength(reader); // Outer SEQUENCE length
-
-                // Read version INTEGER (tag=0x02, length=0x01, value=0x00)
-                bt = reader.ReadByte();
-                if (bt != 0x02) throw new Exception("Invalid PKCS#8 version tag");
-                int versionLen = ReadLength(reader);
-                reader.ReadBytes(versionLen); // Skip version value bytes
-
-                // Algorithm identifier SEQUENCE
-                bt = reader.ReadByte();
-                if (bt != 0x30) throw new Exception("Invalid AlgorithmIdentifier");
-                int algLen = ReadLength(reader);
-                reader.ReadBytes(algLen); // Skip entire AlgorithmIdentifier contents (OID + params)
-
-                // PrivateKey OCTET STRING
-                bt = reader.ReadByte();
-                if (bt != 0x04) throw new Exception("Invalid PrivateKey octet string");
-                ReadLength(reader);
-
-                // Now we are at the RSAPrivateKey (PKCS#1) inner SEQUENCE
-                bt = reader.ReadByte();
-                if (bt != 0x30) throw new Exception("Invalid RSAPrivateKey");
-                ReadLength(reader);
-
-                // RSAPrivateKey version INTEGER
-                bt = reader.ReadByte();
-                if (bt != 0x02) throw new Exception("Invalid RSAPrivateKey version tag");
-                int rsaVersionLen = ReadLength(reader);
-                reader.ReadBytes(rsaVersionLen); // Skip version value
+                reader.ReadByte(); ReadLength(reader);
+                reader.ReadByte(); reader.ReadBytes(ReadLength(reader));
+                reader.ReadByte(); reader.ReadBytes(ReadLength(reader));
+                reader.ReadByte(); ReadLength(reader);
+                reader.ReadByte(); ReadLength(reader);
+                reader.ReadByte(); reader.ReadBytes(ReadLength(reader));
 
                 return new RSAParameters
                 {
@@ -262,11 +247,11 @@ namespace VCBooking.Services
 
         private byte[] ReadInteger(BinaryReader reader)
         {
-            byte bt = reader.ReadByte();
-            if (bt != 0x02) throw new Exception("Expected Integer");
+            reader.ReadByte();
             int length = ReadLength(reader);
             byte[] data = reader.ReadBytes(length);
-            if (data[0] == 0x00) // Skip leading zero byte if present (ASN.1 sign bit)
+
+            if (data[0] == 0x00)
             {
                 byte[] temp = new byte[data.Length - 1];
                 Buffer.BlockCopy(data, 1, temp, 0, temp.Length);

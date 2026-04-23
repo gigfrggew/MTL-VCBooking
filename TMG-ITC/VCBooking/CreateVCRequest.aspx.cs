@@ -20,7 +20,7 @@ namespace VCBooking
 
             if (Session["EmployeeCode"] == null)
             {
-                Response.Redirect("~/Login.aspx");
+                Response.Redirect("~/Login.aspx",false);
             }
             if (!IsPostBack)
             {
