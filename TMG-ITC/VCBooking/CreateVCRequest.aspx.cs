@@ -156,6 +156,7 @@ namespace VCBooking
         protected void ddlVCType_SelectedIndexChanged(object sender, EventArgs e)
         {
             LoadAvailableAccounts();
+            LoadBookedSlots();
         }
 
 
@@ -494,7 +495,11 @@ namespace VCBooking
             gvBookedSlots.DataSource = null;
             gvBookedSlots.DataBind();
 
-            if (string.IsNullOrEmpty(txtDate.Text))
+            int selectedVCTypeId = 0;
+            bool hasVCTypeFilter = int.TryParse(ddlVCType.SelectedValue, out selectedVCTypeId);
+            bool hasDateFilter = !string.IsNullOrEmpty(txtDate.Text);
+
+            if (!hasVCTypeFilter && !hasDateFilter)
                 return;
 
             string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
@@ -511,11 +516,15 @@ namespace VCBooking
                     FROM VCRequestHeader h
                     INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
                     WHERE h.VCStatus IN ('Booked', 'Rescheduled')
-                    AND CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE)
+                    AND (@HasDateFilter = 0 OR CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE))
+                    AND (@HasVCTypeFilter = 0 OR h.VCTypeId = @VCTypeId)
                     ORDER BY h.FromTime";
 
                 SqlCommand cmd = new SqlCommand(query, conn);
-                cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = DateTime.Parse(txtDate.Text);
+                cmd.Parameters.Add("@HasDateFilter", SqlDbType.Bit).Value = hasDateFilter;
+                cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = hasDateFilter ? (object)DateTime.Parse(txtDate.Text) : DBNull.Value;
+                cmd.Parameters.Add("@HasVCTypeFilter", SqlDbType.Bit).Value = hasVCTypeFilter;
+                cmd.Parameters.Add("@VCTypeId", SqlDbType.Int).Value = hasVCTypeFilter ? (object)selectedVCTypeId : DBNull.Value;
 
                 conn.Open();
                 SqlDataAdapter da = new SqlDataAdapter(cmd);
@@ -541,8 +550,7 @@ namespace VCBooking
             SELECT VCId, MeetingId, VCAccountId, Platform
             FROM VCRequestHeader
             WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
-            AND VCStatus IN ('Booked', 'Rescheduled')
-            AND MeetingId IS NOT NULL";
+            AND VCStatus IN ('Booked', 'Rescheduled')";
 
                 SqlCommand cmd = new SqlCommand(query, conn);
                 SqlDataReader reader = await cmd.ExecuteReaderAsync();
@@ -576,25 +584,41 @@ namespace VCBooking
                         string vcAccountId = meeting.Item3;
                         string platform = meeting.Item4;
 
-                        if (platform == "Zoom")
+                        string apiStatus = "DeleteSkipped";
+
+                        if (!string.IsNullOrWhiteSpace(meetingId))
                         {
-                            var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
-                            await zoomService.DeleteMeetingAsync(meetingId);
-                        }
-                        else if (platform == "Google Meet")
-                        {
-                            var googleService = new VCBooking.Services.GoogleMeetService(vcAccountId);
-                            await googleService.DeleteMeetingAsync(meetingId);
+                            try
+                            {
+                                if (platform.IndexOf("Zoom", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
+                                    await zoomService.DeleteMeetingAsync(meetingId);
+                                    apiStatus = "Deleted";
+                                }
+                                else if (platform.IndexOf("Google", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    var googleService = new VCBooking.Services.GoogleMeetService(vcAccountId);
+                                    await googleService.DeleteMeetingAsync(meetingId);
+                                    apiStatus = "Deleted";
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                apiStatus = "DeleteFailed";
+                                System.Diagnostics.Debug.WriteLine("Cleanup API delete error: " + ex.Message);
+                            }
                         }
 
                         string updateQuery = @"
                     UPDATE VCRequestHeader
                     SET VCStatus = 'Completed',
-                        APIStatus = 'Deleted'
+                        APIStatus = @APIStatus
                     WHERE VCId = @VCId";
 
                         SqlCommand updateCmd = new SqlCommand(updateQuery, conn);
                         updateCmd.Parameters.AddWithValue("@VCId", vcId);
+                        updateCmd.Parameters.AddWithValue("@APIStatus", apiStatus);
 
                         await updateCmd.ExecuteNonQueryAsync();
                     }

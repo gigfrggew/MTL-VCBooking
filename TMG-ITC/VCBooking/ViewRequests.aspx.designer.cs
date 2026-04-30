@@ -33,6 +33,15 @@ namespace VCBooking
         protected global::System.Web.UI.WebControls.GridView gvRequests;
 
         /// <summary>
+        /// hfCancelVCId control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.HiddenField hfCancelVCId;
+
+        /// <summary>
         /// txtCancelReason control.
         /// </summary>
         /// <remarks>
@@ -49,6 +58,15 @@ namespace VCBooking
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
         protected global::System.Web.UI.WebControls.Button btnConfirmCancel;
+
+        /// <summary>
+        /// divGridContainer control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.HtmlControls.HtmlGenericControl divGridContainer;
 
         /// <summary>
         /// divEmptyState control.

@@ -24,6 +24,26 @@ namespace VCBooking
         protected global::System.Web.UI.HtmlControls.HtmlForm form1;
 
         /// <summary>
+        /// ScriptManager1 control.
+        /// </summary>
+        protected global::System.Web.UI.ScriptManager ScriptManager1;
+
+        /// <summary>
+        /// lblVCTypeFilter control.
+        /// </summary>
+        protected global::System.Web.UI.WebControls.Label lblVCTypeFilter;
+
+        /// <summary>
+        /// ddlVCTypeFilter control.
+        /// </summary>
+        protected global::System.Web.UI.WebControls.DropDownList ddlVCTypeFilter;
+
+        /// <summary>
+        /// litMeetingFilterSummary control.
+        /// </summary>
+        protected global::System.Web.UI.WebControls.Literal litMeetingFilterSummary;
+
+        /// <summary>
         /// gvMeetings control.
         /// </summary>
         /// <remarks>
@@ -31,6 +51,42 @@ namespace VCBooking
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
         protected global::System.Web.UI.WebControls.GridView gvMeetings;
+
+        /// <summary>
+        /// hfDetailsVCId control.
+        /// </summary>
+        protected global::System.Web.UI.WebControls.HiddenField hfDetailsVCId;
+
+        /// <summary>
+        /// btnLoadDetails control.
+        /// </summary>
+        protected global::System.Web.UI.WebControls.Button btnLoadDetails;
+
+        protected global::System.Web.UI.WebControls.Literal litDetailTitle;
+        protected global::System.Web.UI.WebControls.Panel pnlDetailsEmpty;
+        protected global::System.Web.UI.WebControls.Panel pnlDetailsContent;
+        protected global::System.Web.UI.WebControls.Literal litDetailVCId;
+        protected global::System.Web.UI.WebControls.Literal litDetailStatus;
+        protected global::System.Web.UI.WebControls.Literal litDetailCompany;
+        protected global::System.Web.UI.WebControls.Literal litDetailPlatform;
+        protected global::System.Web.UI.WebControls.Literal litDetailAccount;
+        protected global::System.Web.UI.WebControls.Literal litDetailLocation;
+        protected global::System.Web.UI.WebControls.Literal litDetailDate;
+        protected global::System.Web.UI.WebControls.Literal litDetailTime;
+        protected global::System.Web.UI.WebControls.Literal litDetailCreatedBy;
+        protected global::System.Web.UI.WebControls.Literal litDetailCreatedDate;
+        protected global::System.Web.UI.WebControls.Literal litDetailParticipantCount;
+        protected global::System.Web.UI.WebControls.Literal litDetailApiStatus;
+        protected global::System.Web.UI.WebControls.Literal litDetailUnitFloor;
+        protected global::System.Web.UI.WebControls.Literal litDetailVCDetails;
+        protected global::System.Web.UI.WebControls.Literal litDetailMeetingId;
+        protected global::System.Web.UI.WebControls.Literal litDetailPassword;
+        protected global::System.Web.UI.WebControls.HyperLink lnkDetailJoinUrl;
+        protected global::System.Web.UI.WebControls.Literal litDetailParticipants;
+        protected global::System.Web.UI.WebControls.Literal litDetailCancellation;
+        protected global::System.Web.UI.WebControls.Button btnDetailsReschedule;
+        protected global::System.Web.UI.WebControls.Button btnDetailsCancel;
+        protected global::System.Web.UI.WebControls.Button btnDetailsDelete;
 
 
         /// <summary>

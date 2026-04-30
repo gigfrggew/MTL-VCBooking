@@ -11,14 +11,19 @@ namespace TMG_ITC
             {
                 Response.Redirect("~/Login.aspx");
             }
+
+            if (!IsPostBack)
+            {
+                litUserName.Text = Session["UserName"] != null ? Session["UserName"].ToString() : "Employee";
+            }
         }
 
-        protected void btnComplaints_Click(object sender, EventArgs e)
+        protected void lnkComplaints_Click(object sender, EventArgs e)
         {
             Response.Redirect("");
         }
 
-        protected void btnVCBooking_Click(object sender, EventArgs e)
+        protected void lnkVCBooking_Click(object sender, EventArgs e)
         {
             Response.Redirect("~/VCBooking/EmployeeDashboard.aspx");
         }

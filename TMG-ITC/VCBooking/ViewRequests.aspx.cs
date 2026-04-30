@@ -24,6 +24,19 @@ namespace VCBooking
             }
         }
 
+        public string GetStatusClass(string status)
+        {
+            switch (status)
+            {
+                case "Booked": return "success-subtle";
+                case "Rescheduled": return "info-subtle";
+                case "Cancelled": return "danger-subtle";
+                case "Completed": return "dark-subtle";
+                case "New": return "primary-subtle";
+                default: return "secondary-subtle";
+            }
+        }
+
         protected void LoadRequests()
         {
             string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
@@ -63,12 +76,12 @@ namespace VCBooking
                 {
                     gvRequests.DataSource = dt;
                     gvRequests.DataBind();
-                    gvRequests.Visible = true;
+                    divGridContainer.Visible = true;
                     divEmptyState.Visible = false;
                 }
                 else
                 {
-                    gvRequests.Visible = false;
+                    divGridContainer.Visible = false;
                     divEmptyState.Visible = true;
                 }
             }
@@ -79,34 +92,13 @@ namespace VCBooking
         {
             if (e.Row.RowType == DataControlRowType.DataRow)
             {
-                string status = DataBinder.Eval(e.Row.DataItem, "VCStatus").ToString();
-
-                string badgeClass = "badge bg-secondary";
-                switch (status)
-                {
-                    case "Booked":      badgeClass = "badge bg-success"; break;
-                    case "New":        badgeClass = "badge bg-primary"; break;
-                    case "Rescheduled": badgeClass = "badge bg-info text-dark"; break;
-                    case "Cancelled":  badgeClass = "badge bg-danger"; break;
-                    case "Completed":  badgeClass = "badge bg-dark"; break;
-                }
-
-                // Status is the 10th column (index 9, 0-based)
-                int statusColIndex = 9;
-                e.Row.Cells[statusColIndex].Text =
-                    string.Format("<span class='{0}'>{1}</span>", badgeClass, status);
+                // Logic removed as badge is handled in ASPX template
             }
         }
 
         // Cancel button in grid — open the modal
         protected void gvRequests_RowCommand(object sender, System.Web.UI.WebControls.GridViewCommandEventArgs e)
         {
-            if (e.CommandName == "CancelMeeting")
-            {
-                ViewState["VCId"] = e.CommandArgument.ToString();
-
-                ClientScript.RegisterStartupScript(GetType(), "popup", "showCancelModal();", true);
-            }
         }
 
         // 🔥 CONFIRM CANCEL
@@ -114,8 +106,16 @@ namespace VCBooking
         {
             try
             {
-                string vcId = ViewState["VCId"].ToString();
+                string vcId = hfCancelVCId.Value;
                 string reason = txtCancelReason.Text;
+                string currentUser = Session["UserName"] != null ? Session["UserName"].ToString() : null;
+
+                if (string.IsNullOrWhiteSpace(vcId) || !CanCurrentEmployeeCancel(vcId, currentUser))
+                {
+                    ClientScript.RegisterStartupScript(GetType(), "cancelBlocked",
+                        "alert('This meeting cannot be cancelled.');", true);
+                    return;
+                }
 
                 // 1️⃣ Get meeting details BEFORE updating DB
                 var details = GetBaseMeetingDetails(vcId);
@@ -171,8 +171,10 @@ namespace VCBooking
                 }
 
                 // 5️⃣ Refresh UI
+                hfCancelVCId.Value = "";
+                txtCancelReason.Text = "";
                 LoadRequests();
-                ClientScript.RegisterStartupScript(GetType(), "msg", "alert('Meeting Cancelled Successfully');", true);
+                ClientScript.RegisterStartupScript(GetType(), "msg", "showCancelSuccessModal();", true);
             }
             catch (Exception ex)
             {
@@ -182,6 +184,28 @@ namespace VCBooking
         }
 
         // 🔥 UPDATE DB STATUS
+        private bool CanCurrentEmployeeCancel(string vcId, string currentUser)
+        {
+            if (string.IsNullOrEmpty(currentUser)) return false;
+
+            using (SqlConnection con = new SqlConnection(ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString))
+            {
+                string query = @"
+                SELECT COUNT(*)
+                FROM VCRequestHeader
+                WHERE VCId = @VCId
+                  AND CreatedBy = @CreatedBy
+                  AND VCStatus IN ('Booked', 'Rescheduled')";
+
+                SqlCommand cmd = new SqlCommand(query, con);
+                cmd.Parameters.AddWithValue("@VCId", vcId);
+                cmd.Parameters.AddWithValue("@CreatedBy", currentUser);
+
+                con.Open();
+                return (int)cmd.ExecuteScalar() > 0;
+            }
+        }
+
         private void UpdateStatusInDB(string vcId, string reason)
         {
             using (SqlConnection con = new SqlConnection(ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString))
