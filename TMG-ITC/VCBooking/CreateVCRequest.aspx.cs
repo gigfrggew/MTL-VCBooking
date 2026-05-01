@@ -344,7 +344,8 @@ namespace VCBooking
                                     txtTopic.Text.Trim(),
                                     fullFromDateTime,
                                     (int)(fullToDateTime - fullFromDateTime).TotalMinutes,
-                                    roomUrl
+                                    roomUrl,
+                                    createdByName
                                 );
 
                                 meetingId = googleResponse.id;

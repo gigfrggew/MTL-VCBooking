@@ -90,18 +90,30 @@ namespace VCBooking.Services
             return tokenData.access_token;
         }
 
-        public async Task<MeetingResponse> CreateMeetingAsync(string topic, DateTime startTime, int durationMinutes, string roomUrl)
+        public async Task<MeetingResponse> CreateMeetingAsync(string topic, DateTime startTime, int durationMinutes, string roomUrl, string createdBy)
         {
             string token = await GetAccessTokenAsync();
 
+            // Ensure topic is not empty (fix for "(No title)")
+            string safeTopic = string.IsNullOrWhiteSpace(topic) ? "VC Meeting" : topic;
+            string creator = string.IsNullOrWhiteSpace(createdBy) ? "Unknown" : createdBy;
             string meetLink = string.IsNullOrEmpty(roomUrl) ? "" : roomUrl;
 
             var eventData = new
             {
-                summary = topic,
-                description = $"VC Booking: {topic}\nJoin: {meetLink}",
-                start = new { dateTime = startTime.ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" },
-                end = new { dateTime = startTime.AddMinutes(durationMinutes).ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" }
+                summary = $"{safeTopic} - {creator}",   // ✅ Title + Name
+                description = $"Topic: {safeTopic}\nCreated by: {creator}\nJoin: {meetLink}",
+
+                start = new
+                {
+                    dateTime = startTime.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    timeZone = "UTC"
+                },
+                end = new
+                {
+                    dateTime = startTime.AddMinutes(durationMinutes).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    timeZone = "UTC"
+                }
             };
 
             var json = JsonConvert.SerializeObject(eventData);
@@ -128,6 +140,8 @@ namespace VCBooking.Services
                 };
             }
         }
+
+
 
         public async Task UpdateMeetingAsync(string eventId, string topic, DateTime startTime, int durationMinutes)
         {
