@@ -20,7 +20,8 @@ namespace VCBooking
 
             if (Session["EmployeeCode"] == null)
             {
-                Response.Redirect("~/Login.aspx");
+                Response.Redirect("~/Login.aspx", false);
+                Context.ApplicationInstance.CompleteRequest();
             }
             if (!IsPostBack)
             {
@@ -71,10 +72,6 @@ namespace VCBooking
                 ddlHours.SelectedValue = "0";
                 ddlMinutes.SelectedValue = "15";
 
-                // 5. Trigger Initial Availability View
-                // Note: ddlVCType is still --Select--, so it might not load accounts yet, 
-                // but at least BookedSlots will show today's calendar.
-                LoadBookedSlots();
             }
 
         }
@@ -156,6 +153,11 @@ namespace VCBooking
         protected void ddlVCType_SelectedIndexChanged(object sender, EventArgs e)
         {
             LoadAvailableAccounts();
+            LoadBookedSlots();
+        }
+
+        protected void ddlVCAccount_SelectedIndexChanged(object sender, EventArgs e)
+        {
             LoadBookedSlots();
         }
 
@@ -421,18 +423,10 @@ namespace VCBooking
                     // 🔹 Query excludes already booked and active meetings
                     // We ignore 'Cancelled' and 'Completed' statuses
                     string query = @"
-            SELECT a.VCAccountId, a.VCAccountName
-            FROM VC_Account_Master a
-            WHERE a.VCTypeId = @VCTypeId
-            AND a.Status = 'Active'
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM VCRequestHeader h
-                WHERE h.VCAccountId = a.VCAccountId
-                AND h.VCStatus NOT IN ('Cancelled', 'Completed')
-                AND (@NewFromTime < h.ToTime AND @NewToTime > h.FromTime)
-            )";
+                      SELECT a.VCAccountId, a.VCAccountName
+                      FROM VC_Account_Master a
+                      WHERE a.VCTypeId = @VCTypeId
+                      AND a.Status = 'Active'";
 
                     SqlCommand cmd = new SqlCommand(query, conn);
                     cmd.Parameters.AddWithValue("@VCTypeId", ddlVCType.SelectedValue);
@@ -486,7 +480,6 @@ namespace VCBooking
 
         protected void DateOrTimeChanged(object sender, EventArgs e)
         {
-            LoadAvailableAccounts();
             LoadBookedSlots();
         }
 
@@ -495,36 +488,65 @@ namespace VCBooking
             gvBookedSlots.DataSource = null;
             gvBookedSlots.DataBind();
 
-            int selectedVCTypeId = 0;
-            bool hasVCTypeFilter = int.TryParse(ddlVCType.SelectedValue, out selectedVCTypeId);
-            bool hasDateFilter = !string.IsNullOrEmpty(txtDate.Text);
-
-            if (!hasVCTypeFilter && !hasDateFilter)
+            if (string.IsNullOrEmpty(txtDate.Text) || string.IsNullOrEmpty(ddlVCAccount.SelectedValue))
                 return;
 
             string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
 
             using (SqlConnection conn = new SqlConnection(connStr))
             {
-                string query = @"
-                    SELECT
-                        a.VCAccountName,
-                        h.Topic,
-                        h.FromTime,
-                        h.ToTime,
-                        h.VCStatus
-                    FROM VCRequestHeader h
-                    INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
-                    WHERE h.VCStatus IN ('Booked', 'Rescheduled')
-                    AND (@HasDateFilter = 0 OR CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE))
-                    AND (@HasVCTypeFilter = 0 OR h.VCTypeId = @VCTypeId)
-                    ORDER BY h.FromTime";
+                bool hasTime = !string.IsNullOrEmpty(ddlFromHour.SelectedValue) &&
+                               !string.IsNullOrEmpty(ddlFromMinute.SelectedValue);
+
+                string query = "";
+
+                if (hasTime)
+                {
+                    // 🔥 SHOW ONLY CONFLICTS
+                    query = @"
+            SELECT a.VCAccountName, h.Topic, h.FromTime, h.ToTime, h.VCStatus
+            FROM VCRequestHeader h
+            INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
+            WHERE h.VCStatus IN ('Booked', 'Rescheduled')
+            AND h.VCAccountId = @VCAccountId
+            AND (@NewFromTime < h.ToTime AND @NewToTime > h.FromTime)
+            ORDER BY h.FromTime";
+                }
+                else
+                {
+                    // 🔥 SHOW FULL DAY BOOKINGS
+                    query = @"
+            SELECT a.VCAccountName, h.Topic, h.FromTime, h.ToTime, h.VCStatus
+            FROM VCRequestHeader h
+            INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
+            WHERE h.VCStatus IN ('Booked', 'Rescheduled')
+            AND h.VCAccountId = @VCAccountId
+            AND CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE)
+            ORDER BY h.FromTime";
+                }
 
                 SqlCommand cmd = new SqlCommand(query, conn);
-                cmd.Parameters.Add("@HasDateFilter", SqlDbType.Bit).Value = hasDateFilter;
-                cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = hasDateFilter ? (object)DateTime.Parse(txtDate.Text) : DBNull.Value;
-                cmd.Parameters.Add("@HasVCTypeFilter", SqlDbType.Bit).Value = hasVCTypeFilter;
-                cmd.Parameters.Add("@VCTypeId", SqlDbType.Int).Value = hasVCTypeFilter ? (object)selectedVCTypeId : DBNull.Value;
+
+                cmd.Parameters.Add("@VCAccountId", SqlDbType.Int).Value = ddlVCAccount.SelectedValue;
+                cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = DateTime.Parse(txtDate.Text);
+
+                if (hasTime)
+                {
+                    int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                    int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+
+                    DateTime newFrom = DateTime.Parse(txtDate.Text)
+                                        .AddHours(fromHour)
+                                        .AddMinutes(fromMinute);
+
+                    int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+                    int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+
+                    DateTime newTo = newFrom.AddMinutes((hours * 60) + minutes);
+
+                    cmd.Parameters.Add("@NewFromTime", SqlDbType.DateTime).Value = newFrom;
+                    cmd.Parameters.Add("@NewToTime", SqlDbType.DateTime).Value = newTo;
+                }
 
                 conn.Open();
                 SqlDataAdapter da = new SqlDataAdapter(cmd);
