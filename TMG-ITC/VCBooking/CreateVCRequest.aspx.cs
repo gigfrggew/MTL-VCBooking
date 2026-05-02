@@ -20,7 +20,12 @@ namespace VCBooking
 
             if (Session["EmployeeCode"] == null)
             {
+<<<<<<< HEAD
                 Response.Redirect("~/Login.aspx",false);
+=======
+                Response.Redirect("~/Login.aspx", false);
+                Context.ApplicationInstance.CompleteRequest();
+>>>>>>> bharath
             }
             if (!IsPostBack)
             {
@@ -71,10 +76,6 @@ namespace VCBooking
                 ddlHours.SelectedValue = "0";
                 ddlMinutes.SelectedValue = "15";
 
-                // 5. Trigger Initial Availability View
-                // Note: ddlVCType is still --Select--, so it might not load accounts yet, 
-                // but at least BookedSlots will show today's calendar.
-                LoadBookedSlots();
             }
 
         }
@@ -156,6 +157,12 @@ namespace VCBooking
         protected void ddlVCType_SelectedIndexChanged(object sender, EventArgs e)
         {
             LoadAvailableAccounts();
+            LoadBookedSlots();
+        }
+
+        protected void ddlVCAccount_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            LoadBookedSlots();
         }
 
 
@@ -421,18 +428,10 @@ namespace VCBooking
                     // 🔹 Query excludes already booked and active meetings
                     // We ignore 'Cancelled' and 'Completed' statuses
                     string query = @"
-            SELECT a.VCAccountId, a.VCAccountName
-            FROM VC_Account_Master a
-            WHERE a.VCTypeId = @VCTypeId
-            AND a.Status = 'Active'
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM VCRequestHeader h
-                WHERE h.VCAccountId = a.VCAccountId
-                AND h.VCStatus NOT IN ('Cancelled', 'Completed')
-                AND (@NewFromTime < h.ToTime AND @NewToTime > h.FromTime)
-            )";
+                      SELECT a.VCAccountId, a.VCAccountName
+                      FROM VC_Account_Master a
+                      WHERE a.VCTypeId = @VCTypeId
+                      AND a.Status = 'Active'";
 
                     SqlCommand cmd = new SqlCommand(query, conn);
                     cmd.Parameters.AddWithValue("@VCTypeId", ddlVCType.SelectedValue);
@@ -486,7 +485,6 @@ namespace VCBooking
 
         protected void DateOrTimeChanged(object sender, EventArgs e)
         {
-            LoadAvailableAccounts();
             LoadBookedSlots();
         }
 
@@ -495,28 +493,65 @@ namespace VCBooking
             gvBookedSlots.DataSource = null;
             gvBookedSlots.DataBind();
 
-            if (string.IsNullOrEmpty(txtDate.Text))
+            if (string.IsNullOrEmpty(txtDate.Text) || string.IsNullOrEmpty(ddlVCAccount.SelectedValue))
                 return;
 
             string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
 
             using (SqlConnection conn = new SqlConnection(connStr))
             {
-                string query = @"
-                    SELECT
-                        a.VCAccountName,
-                        h.Topic,
-                        h.FromTime,
-                        h.ToTime,
-                        h.VCStatus
-                    FROM VCRequestHeader h
-                    INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
-                    WHERE h.VCStatus IN ('Booked', 'Rescheduled')
-                    AND CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE)
-                    ORDER BY h.FromTime";
+                bool hasTime = !string.IsNullOrEmpty(ddlFromHour.SelectedValue) &&
+                               !string.IsNullOrEmpty(ddlFromMinute.SelectedValue);
+
+                string query = "";
+
+                if (hasTime)
+                {
+                    // 🔥 SHOW ONLY CONFLICTS
+                    query = @"
+            SELECT a.VCAccountName, h.Topic, h.FromTime, h.ToTime, h.VCStatus
+            FROM VCRequestHeader h
+            INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
+            WHERE h.VCStatus IN ('Booked', 'Rescheduled')
+            AND h.VCAccountId = @VCAccountId
+            AND (@NewFromTime < h.ToTime AND @NewToTime > h.FromTime)
+            ORDER BY h.FromTime";
+                }
+                else
+                {
+                    // 🔥 SHOW FULL DAY BOOKINGS
+                    query = @"
+            SELECT a.VCAccountName, h.Topic, h.FromTime, h.ToTime, h.VCStatus
+            FROM VCRequestHeader h
+            INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
+            WHERE h.VCStatus IN ('Booked', 'Rescheduled')
+            AND h.VCAccountId = @VCAccountId
+            AND CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE)
+            ORDER BY h.FromTime";
+                }
 
                 SqlCommand cmd = new SqlCommand(query, conn);
+
+                cmd.Parameters.Add("@VCAccountId", SqlDbType.Int).Value = ddlVCAccount.SelectedValue;
                 cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = DateTime.Parse(txtDate.Text);
+
+                if (hasTime)
+                {
+                    int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                    int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+
+                    DateTime newFrom = DateTime.Parse(txtDate.Text)
+                                        .AddHours(fromHour)
+                                        .AddMinutes(fromMinute);
+
+                    int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+                    int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+
+                    DateTime newTo = newFrom.AddMinutes((hours * 60) + minutes);
+
+                    cmd.Parameters.Add("@NewFromTime", SqlDbType.DateTime).Value = newFrom;
+                    cmd.Parameters.Add("@NewToTime", SqlDbType.DateTime).Value = newTo;
+                }
 
                 conn.Open();
                 SqlDataAdapter da = new SqlDataAdapter(cmd);
@@ -542,8 +577,7 @@ namespace VCBooking
             SELECT VCId, MeetingId, VCAccountId, Platform
             FROM VCRequestHeader
             WHERE DATEADD(MINUTE, 10, ToTime) < GETDATE()
-            AND VCStatus IN ('Booked', 'Rescheduled')
-            AND MeetingId IS NOT NULL";
+            AND VCStatus IN ('Booked', 'Rescheduled')";
 
                 SqlCommand cmd = new SqlCommand(query, conn);
                 SqlDataReader reader = await cmd.ExecuteReaderAsync();
@@ -577,25 +611,41 @@ namespace VCBooking
                         string vcAccountId = meeting.Item3;
                         string platform = meeting.Item4;
 
-                        if (platform == "Zoom")
+                        string apiStatus = "DeleteSkipped";
+
+                        if (!string.IsNullOrWhiteSpace(meetingId))
                         {
-                            var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
-                            await zoomService.DeleteMeetingAsync(meetingId);
-                        }
-                        else if (platform == "Google Meet")
-                        {
-                            var googleService = new VCBooking.Services.GoogleMeetService(vcAccountId);
-                            await googleService.DeleteMeetingAsync(meetingId);
+                            try
+                            {
+                                if (platform.IndexOf("Zoom", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    var zoomService = new VCBooking.Services.ZoomService(vcAccountId);
+                                    await zoomService.DeleteMeetingAsync(meetingId);
+                                    apiStatus = "Deleted";
+                                }
+                                else if (platform.IndexOf("Google", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    var googleService = new VCBooking.Services.GoogleMeetService(vcAccountId);
+                                    await googleService.DeleteMeetingAsync(meetingId);
+                                    apiStatus = "Deleted";
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                apiStatus = "DeleteFailed";
+                                System.Diagnostics.Debug.WriteLine("Cleanup API delete error: " + ex.Message);
+                            }
                         }
 
                         string updateQuery = @"
                     UPDATE VCRequestHeader
                     SET VCStatus = 'Completed',
-                        APIStatus = 'Deleted'
+                        APIStatus = @APIStatus
                     WHERE VCId = @VCId";
 
                         SqlCommand updateCmd = new SqlCommand(updateQuery, conn);
                         updateCmd.Parameters.AddWithValue("@VCId", vcId);
+                        updateCmd.Parameters.AddWithValue("@APIStatus", apiStatus);
 
                         await updateCmd.ExecuteNonQueryAsync();
                     }

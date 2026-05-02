@@ -94,13 +94,17 @@ namespace VCBooking.Services
         {
             string token = await GetAccessTokenAsync();
 
+<<<<<<< HEAD
             // Ensure topic is not empty (fix for "(No title)")
             string safeTopic = string.IsNullOrWhiteSpace(topic) ? "VC Meeting" : topic;
             string creator = string.IsNullOrWhiteSpace(createdBy) ? "Unknown" : createdBy;
+=======
+>>>>>>> bharath
             string meetLink = string.IsNullOrEmpty(roomUrl) ? "" : roomUrl;
 
             var eventData = new
             {
+<<<<<<< HEAD
                 summary = $"{safeTopic} - {creator}",   // ✅ Title + Name
                 description = $"Topic: {safeTopic}\nCreated by: {creator}\nJoin: {meetLink}",
 
@@ -114,6 +118,12 @@ namespace VCBooking.Services
                     dateTime = startTime.AddMinutes(durationMinutes).ToString("yyyy-MM-ddTHH:mm:ssZ"),
                     timeZone = "UTC"
                 }
+=======
+                summary = topic,
+                description = $"VC Booking: {topic}\nJoin: {meetLink}",
+                start = new { dateTime = startTime.ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" },
+                end = new { dateTime = startTime.AddMinutes(durationMinutes).ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" }
+>>>>>>> bharath
             };
 
             var json = JsonConvert.SerializeObject(eventData);

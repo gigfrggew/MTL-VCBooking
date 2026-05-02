@@ -24,22 +24,31 @@ namespace TMG_ITC
         protected global::System.Web.UI.HtmlControls.HtmlForm form1;
 
         /// <summary>
-        /// btnComplaints control.
+        /// litUserName control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnComplaints;
+        protected global::System.Web.UI.WebControls.Literal litUserName;
 
         /// <summary>
-        /// btnVCBooking control.
+        /// lnkVCBooking control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnVCBooking;
+        protected global::System.Web.UI.WebControls.LinkButton lnkVCBooking;
+
+        /// <summary>
+        /// lnkComplaints control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.LinkButton lnkComplaints;
 
         /// <summary>
         /// btnLogout control.
@@ -48,6 +57,6 @@ namespace TMG_ITC
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnLogout;
+        protected global::System.Web.UI.WebControls.LinkButton btnLogout;
     }
 }

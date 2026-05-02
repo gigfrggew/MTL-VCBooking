@@ -39,7 +39,7 @@ namespace VCBooking
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnCreateVCRequest;
+        protected global::System.Web.UI.WebControls.LinkButton btnCreateVCRequest;
 
         /// <summary>
         /// btnViewRequests control.
@@ -48,7 +48,7 @@ namespace VCBooking
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnViewRequests;
+        protected global::System.Web.UI.WebControls.LinkButton btnViewRequests;
 
         /// <summary>
         /// btnAdminDashboard control.
@@ -57,7 +57,7 @@ namespace VCBooking
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnAdminDashboard;
+        protected global::System.Web.UI.WebControls.LinkButton btnAdminDashboard;
 
         /// <summary>
         /// btnLogOut control.
@@ -66,6 +66,6 @@ namespace VCBooking
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Button btnLogOut;
+        protected global::System.Web.UI.WebControls.LinkButton btnLogOut;
     }
 }

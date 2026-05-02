@@ -24,13 +24,22 @@ namespace VCBooking
         protected global::System.Web.UI.HtmlControls.HtmlForm form1;
 
         /// <summary>
-        /// lblCompany control.
+        /// hdnShowSuccess control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblCompany;
+        protected global::System.Web.UI.WebControls.HiddenField hdnShowSuccess;
+
+        /// <summary>
+        /// UpdatePanel1 control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.UpdatePanel UpdatePanel1;
 
         /// <summary>
         /// ddlCompany control.
@@ -42,15 +51,6 @@ namespace VCBooking
         protected global::System.Web.UI.WebControls.DropDownList ddlCompany;
 
         /// <summary>
-        /// lblTopic control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblTopic;
-
-        /// <summary>
         /// txtTopic control.
         /// </summary>
         /// <remarks>
@@ -60,13 +60,22 @@ namespace VCBooking
         protected global::System.Web.UI.WebControls.TextBox txtTopic;
 
         /// <summary>
-        /// lblDate control.
+        /// txtUnitFloor control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblDate;
+        protected global::System.Web.UI.WebControls.TextBox txtUnitFloor;
+
+        /// <summary>
+        /// ddlLocation control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.DropDownList ddlLocation;
 
         /// <summary>
         /// txtDate control.
@@ -78,13 +87,31 @@ namespace VCBooking
         protected global::System.Web.UI.WebControls.TextBox txtDate;
 
         /// <summary>
-        /// lblFrom control.
+        /// ddlVCType control.
         /// </summary>
         /// <remarks>
         /// Auto-generated field.
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblFrom;
+        protected global::System.Web.UI.WebControls.DropDownList ddlVCType;
+
+        /// <summary>
+        /// ddlVCAccount control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.DropDownList ddlVCAccount;
+
+        /// <summary>
+        /// gvBookedSlots control.
+        /// </summary>
+        /// <remarks>
+        /// Auto-generated field.
+        /// To modify move field declaration from designer file to code-behind file.
+        /// </remarks>
+        protected global::System.Web.UI.WebControls.GridView gvBookedSlots;
 
         /// <summary>
         /// ddlFromHour control.
@@ -121,87 +148,6 @@ namespace VCBooking
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
         protected global::System.Web.UI.WebControls.DropDownList ddlMinutes;
-
-        /// <summary>
-        /// lblVCType control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblVCType;
-
-        /// <summary>
-        /// ddlVCType control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.DropDownList ddlVCType;
-
-        /// <summary>
-        /// lblVCAccount control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblVCAccount;
-
-        /// <summary>
-        /// ddlVCAccount control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.DropDownList ddlVCAccount;
-
-        /// <summary>
-        /// lblLocation control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblLocation;
-
-        /// <summary>
-        /// ddlLocation control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.DropDownList ddlLocation;
-
-        /// <summary>
-        /// lblUnitFloor control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblUnitFloor;
-
-        /// <summary>
-        /// txtUnitFloor control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.TextBox txtUnitFloor;
-
-        /// <summary>
-        /// lblVCDetails control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.Label lblVCDetails;
 
         /// <summary>
         /// txtVCDetails control.
@@ -249,15 +195,6 @@ namespace VCBooking
         protected global::System.Web.UI.WebControls.GridView gvParticipants;
 
         /// <summary>
-        /// gvBookedSlots control.
-        /// </summary>
-        /// <remarks>
-        /// Auto-generated field.
-        /// To modify move field declaration from designer file to code-behind file.
-        /// </remarks>
-        protected global::System.Web.UI.WebControls.GridView gvBookedSlots;
-
-        /// <summary>
         /// btnFormSubmit control.
         /// </summary>
         /// <remarks>
@@ -265,10 +202,5 @@ namespace VCBooking
         /// To modify move field declaration from designer file to code-behind file.
         /// </remarks>
         protected global::System.Web.UI.WebControls.Button btnFormSubmit;
-
-        /// <summary>
-        /// hdnShowSuccess control.
-        /// </summary>
-        protected global::System.Web.UI.WebControls.HiddenField hdnShowSuccess;
     }
 }
