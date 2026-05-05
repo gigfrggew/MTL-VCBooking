@@ -9,6 +9,40 @@
     <link href="../Content/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
     <link href="../Content/Site.css?v=20260427-clean3" rel="stylesheet" />
+    <style>
+        .dash-item {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            border: 1px solid rgba(0,0,0,0.02) !important;
+        }
+
+        .dash-item:hover {
+            transform: scale(1.05) !important;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.08) !important;
+            background: #fff !important;
+            border-color: var(--vc-primary) !important;
+        }
+
+        .dash-item-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .dash-item:hover .dash-item-icon {
+            transform: scale(1.1) rotate(5deg);
+        }
+
+        .animate-up {
+            animation: fadeInUp 0.6s both;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+    </style>
 </head>
 <body class="bg-ice">
     <form id="form1" runat="server">
@@ -27,7 +61,7 @@
 
                     <div class="dash-grid employee-dash-grid">
                         <!-- Create Request -->
-                        <asp:LinkButton runat="server" ID="btnCreateVCRequest" OnClick="btnClick_createVCRequest" CssClass="dash-item">
+                        <asp:LinkButton runat="server" ID="btnCreateVCRequest" OnClick="btnClick_createVCRequest" CssClass="dash-item animate-up delay-1">
                             <div class="dash-item-icon">
                                 <i class="bi bi-calendar-plus"></i>
                             </div>
@@ -35,7 +69,7 @@
                         </asp:LinkButton>
 
                         <!-- My Requests -->
-                        <asp:LinkButton runat="server" ID="btnViewRequests" OnClick="btnClick_viewRequests" CssClass="dash-item">
+                        <asp:LinkButton runat="server" ID="btnViewRequests" OnClick="btnClick_viewRequests" CssClass="dash-item animate-up delay-2">
                             <div class="dash-item-icon">
                                 <i class="bi bi-file-earmark-text"></i>
                             </div>
@@ -43,7 +77,7 @@
                         </asp:LinkButton>
 
                         <!-- Admin Dashboard -->
-                        <asp:LinkButton runat="server" ID="btnAdminDashboard" OnClick="btnClick_adminDashboard" Visible="false" CssClass="dash-item">
+                        <asp:LinkButton runat="server" ID="btnAdminDashboard" OnClick="btnClick_adminDashboard" Visible="false" CssClass="dash-item animate-up delay-3">
                             <div class="dash-item-icon">
                                 <i class="bi bi-box"></i>
                             </div>

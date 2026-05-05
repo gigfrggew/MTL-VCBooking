@@ -128,6 +128,24 @@ namespace VCBooking
 
         }
 
+        protected void gvParticipants_RowCommand(object sender, System.Web.UI.WebControls.GridViewCommandEventArgs e)
+        {
+            if (e.CommandName == "RemoveParticipant")
+            {
+                int index = int.Parse(e.CommandArgument.ToString());
+                DataTable dt = ViewState["Participants"] as DataTable;
+
+                if (dt != null && index >= 0 && index < dt.Rows.Count)
+                {
+                    dt.Rows.RemoveAt(index);
+                    ViewState["Participants"] = dt;
+
+                    gvParticipants.DataSource = dt;
+                    gvParticipants.DataBind();
+                }
+            }
+        }
+
 
         private void LoadDropdown(string query, DropDownList ddl, string textField, string valueField, string placeholderText)
         {
@@ -156,10 +174,6 @@ namespace VCBooking
             LoadBookedSlots();
         }
 
-        protected void ddlVCAccount_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            LoadBookedSlots();
-        }
 
 
         protected async void btnFormSubmit_Click(object sender, EventArgs e)
@@ -175,14 +189,14 @@ namespace VCBooking
                     (ddlFromHour.SelectedValue == "" || ddlFromMinute.SelectedValue == "") ||
                     (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
                 {
-                    ScriptManager.RegisterStartupScript(this, GetType(), "alert", "alert('Please fill all required fields');", true);
+                    ShowToastMessage("Please fill all required fields", "error");
                     return;
                 }
 
                 DataTable dt = ViewState["Participants"] as DataTable;
                 if (dt == null || dt.Rows.Count == 0)
                 {
-                    ScriptManager.RegisterStartupScript(this, GetType(), "alert", "alert('Add at least one participant');", true);
+                    ShowToastMessage("Add at least one participant", "error");
                     return;
                 }
 
@@ -244,8 +258,7 @@ namespace VCBooking
                             // ❗ Prevent 0 duration
                             if (duration == 0)
                             {
-                                ScriptManager.RegisterStartupScript(this, GetType(), "alert",
-                                    "alert('Please select valid duration');", true);
+                                ShowToastMessage("Please select valid duration", "error");
                                 return;
                             }
 
@@ -265,7 +278,7 @@ namespace VCBooking
                             if ((int)cmdCheck.ExecuteScalar() > 0)
                             {
                                 transaction.Rollback();
-                                ScriptManager.RegisterStartupScript(this, GetType(), "alert", "alert('Selected VC Account is already booked!');", true);
+                                ShowToastMessage("Selected VC Account is already booked!", "error");
                                 return;
                             }
 
@@ -394,8 +407,26 @@ namespace VCBooking
             catch (Exception ex)
             {
                 string msg = ex.Message.Replace("'", "").Replace("\n", " ").Replace("\r", " ");
-                ScriptManager.RegisterStartupScript(this, GetType(), "errorAlert", "alert('Error creating meeting: " + msg + "');", true);
+                ShowToastMessage("Error creating meeting: " + msg, "error");
             }
+        }
+
+        private void ShowToastMessage(string message, string type = "error")
+        {
+            string bgColor = type == "error" ? "#fee2e2" : "#dcfce3";
+            string color = type == "error" ? "#ef4444" : "#22c55e";
+            string icon = type == "error" ? "bi-exclamation-circle-fill" : "bi-check-circle-fill";
+            
+            string script = string.Format(@"
+                var toastHtml = `<div class='custom-toast' style='position: fixed; top: 20px; right: 20px; z-index: 1050; background: {1}; color: {2}; padding: 15px 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-left: 4px solid {2}; font-weight: 500; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; display: flex; align-items: center; gap: 10px;'><i class='bi {3} fs-5'></i> <span>{0}</span></div>`;
+                document.body.insertAdjacentHTML('beforeend', toastHtml);
+                var toasts = document.querySelectorAll('.custom-toast');
+                var toast = toasts[toasts.length - 1];
+                setTimeout(() => {{ toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }}, 10);
+                setTimeout(() => {{ toast.style.opacity = '0'; toast.style.transform = 'translateY(-20px)'; setTimeout(() => toast.remove(), 300); }}, 5000);
+            ", message.Replace("'", "\\'"), bgColor, color, icon);
+
+            ScriptManager.RegisterStartupScript(this, GetType(), "toastAlert_" + Guid.NewGuid().ToString("N"), script, true);
         }
 
 
@@ -406,80 +437,122 @@ namespace VCBooking
         {
             try
             {
+                ddlVCAccount.Items.Clear();
+                ddlVCAccount.Items.Add(new ListItem("-- Select Account --", ""));
+                ViewState["BusyAccountIds"] = new List<string>();
+
                 if (ddlVCType.SelectedValue == "" ||
                     string.IsNullOrEmpty(txtDate.Text) ||
-                    (ddlFromHour.SelectedValue == "" || ddlFromMinute.SelectedValue == "") ||
-                    (ddlHours.SelectedValue == "" && ddlMinutes.SelectedValue == ""))
+                    ddlFromHour.SelectedValue == "" ||
+                    ddlFromMinute.SelectedValue == "")
+                    return;
+
+                int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+                int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+                int duration = (hours * 60) + minutes;
+
+                if (duration == 0)
                 {
                     ddlVCAccount.Items.Clear();
-                    ddlVCAccount.Items.Insert(0, new ListItem("-- Select Account --", ""));
+                    ddlVCAccount.Items.Add(new ListItem("-- Set a duration first --", ""));
                     return;
                 }
 
+                int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+                DateTime newFrom = DateTime.Parse(txtDate.Text).AddHours(fromHour).AddMinutes(fromMinute);
+                DateTime newTo = newFrom.AddMinutes(duration);
+
                 string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
+                var busyIds = new List<string>();
 
                 using (SqlConnection conn = new SqlConnection(connStr))
                 {
-                    // 🔹 Query excludes already booked and active meetings
-                    // We ignore 'Cancelled' and 'Completed' statuses
+                    // Fetch ALL active accounts for this VC type,
+                    // with a flag (IsBusy) indicating if they clash with the selected slot.
                     string query = @"
-                      SELECT a.VCAccountId, a.VCAccountName
-                      FROM VC_Account_Master a
-                      WHERE a.VCTypeId = @VCTypeId
-                      AND a.Status = 'Active'";
+                        SELECT
+                            a.VCAccountId,
+                            a.VCAccountName,
+                            CASE WHEN EXISTS (
+                                SELECT 1 FROM VCRequestHeader h
+                                WHERE h.VCAccountId = a.VCAccountId
+                                AND h.VCStatus NOT IN ('Cancelled', 'Completed')
+                                AND (@NewFrom < h.ToTime AND @NewTo > h.FromTime)
+                            ) THEN 1 ELSE 0 END AS IsBusy
+                        FROM VC_Account_Master a
+                        WHERE a.VCTypeId = @VCTypeId
+                        AND a.Status = 'Active'
+                        ORDER BY IsBusy ASC, a.VCAccountName ASC";
 
                     SqlCommand cmd = new SqlCommand(query, conn);
                     cmd.Parameters.AddWithValue("@VCTypeId", ddlVCType.SelectedValue);
-
-                    // 🔹 Robust Parsing
-                    DateTime newFrom, newTo;
-
-                    // ✅ Get duration from Hours + Minutes dropdown
-                    int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
-                    int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
-
-                    int duration = (hours * 60) + minutes;
-
-                    // ✅ Validate and calculate time
-                    int fromHour = int.Parse(ddlFromHour.SelectedValue);
-                    int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
-
-                    newFrom = DateTime.Parse(txtDate.Text)
-                                .AddHours(fromHour)
-                                .AddMinutes(fromMinute);
-
-                    if (duration == 0)
-                    {
-                        return;
-                    }
-
-                    newTo = newFrom.AddMinutes(duration);
-
-                    cmd.Parameters.Add("@NewFromTime", SqlDbType.DateTime).Value = newFrom;
-                    cmd.Parameters.Add("@NewToTime", SqlDbType.DateTime).Value = newTo;
+                    cmd.Parameters.Add("@NewFrom", SqlDbType.DateTime).Value = newFrom;
+                    cmd.Parameters.Add("@NewTo", SqlDbType.DateTime).Value = newTo;
 
                     conn.Open();
                     SqlDataReader reader = cmd.ExecuteReader();
 
-                    ddlVCAccount.DataSource = reader;
-                    ddlVCAccount.DataTextField = "VCAccountName";
-                    ddlVCAccount.DataValueField = "VCAccountId";
-                    ddlVCAccount.DataBind();
+                    while (reader.Read())
+                    {
+                        string id = reader["VCAccountId"].ToString();
+                        string name = reader["VCAccountName"].ToString();
+                        bool isBusy = reader["IsBusy"].ToString() == "1";
 
-                    ddlVCAccount.Items.Insert(0, new ListItem("-- Select Account --", ""));
+                        string displayName = isBusy ? name + "  ⚠ Already Booked" : name;
+                        var item = new ListItem(displayName, id);
+
+                        if (isBusy)
+                        {
+                            busyIds.Add(id);
+                        }
+
+                        ddlVCAccount.Items.Add(item);
+                    }
                 }
+
+                ViewState["BusyAccountIds"] = busyIds;
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine("Error loading accounts: " + ex.Message);
                 ddlVCAccount.Items.Clear();
-                ddlVCAccount.Items.Insert(0, new ListItem("-- Error Loading Accounts --", ""));
+                ddlVCAccount.Items.Add(new ListItem("-- Error Loading Accounts --", ""));
             }
         }
 
+        protected void ddlVCAccount_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            string selectedId = ddlVCAccount.SelectedValue;
+            if (string.IsNullOrEmpty(selectedId)) return;
+
+            var busyIds = ViewState["BusyAccountIds"] as List<string>;
+
+            if (busyIds != null && busyIds.Contains(selectedId))
+            {
+                // Show toast and reset selection
+                string accountName = ddlVCAccount.SelectedItem.Text.Replace("  ⚠ Already Booked", "").Trim();
+                string msg = string.Format("{0} is already booked for the selected time slot. Please choose a different account or adjust the time.", accountName);
+                
+                string script = string.Format(@"
+                    var toastHtml = `<div id='busyToast' style='position: fixed; top: 20px; right: 20px; z-index: 1050; background: #fee2e2; color: #ef4444; padding: 15px 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-left: 4px solid #ef4444; font-weight: 500; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; display: flex; align-items: center; gap: 10px;'><i class='bi bi-exclamation-circle-fill fs-5'></i> <span>{0}</span></div>`;
+                    document.body.insertAdjacentHTML('beforeend', toastHtml);
+                    var toast = document.getElementById('busyToast');
+                    setTimeout(() => {{ toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }}, 10);
+                    setTimeout(() => {{ toast.style.opacity = '0'; toast.style.transform = 'translateY(-20px)'; setTimeout(() => toast.remove(), 300); }}, 10000);
+                ", msg.Replace("'", "\\'"));
+
+                ScriptManager.RegisterStartupScript(this, GetType(), "busyAlert", script, true);
+                ddlVCAccount.SelectedIndex = 0; // reset to --Select--
+                return;
+            }
+
+            LoadBookedSlots();
+        }
 
         protected void DateOrTimeChanged(object sender, EventArgs e)
         {
+            LoadAvailableAccounts();
             LoadBookedSlots();
         }
 
@@ -488,65 +561,62 @@ namespace VCBooking
             gvBookedSlots.DataSource = null;
             gvBookedSlots.DataBind();
 
-            if (string.IsNullOrEmpty(txtDate.Text) || string.IsNullOrEmpty(ddlVCAccount.SelectedValue))
+            int selectedVCTypeId = 0;
+            bool hasVCTypeFilter = int.TryParse(ddlVCType.SelectedValue, out selectedVCTypeId);
+            bool hasDateFilter = !string.IsNullOrEmpty(txtDate.Text);
+
+            int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
+            int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
+            int duration = (hours * 60) + minutes;
+
+            bool hasTimeFilter = (duration > 0 && !string.IsNullOrEmpty(ddlFromHour.SelectedValue) && !string.IsNullOrEmpty(ddlFromMinute.SelectedValue));
+            DateTime? newFrom = null;
+            DateTime? newTo = null;
+
+            if (hasTimeFilter && hasDateFilter)
+            {
+                int fromHour = int.Parse(ddlFromHour.SelectedValue);
+                int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
+                newFrom = DateTime.Parse(txtDate.Text).AddHours(fromHour).AddMinutes(fromMinute);
+                newTo = newFrom.Value.AddMinutes(duration);
+            }
+
+            bool hasAccountFilter = !string.IsNullOrEmpty(ddlVCAccount.SelectedValue);
+
+            if (!hasVCTypeFilter)
+            {
+                gvBookedSlots.DataSource = null;
+                gvBookedSlots.DataBind();
                 return;
+            }
 
             string connStr = ConfigurationManager.ConnectionStrings["HRConnection"].ConnectionString;
 
             using (SqlConnection conn = new SqlConnection(connStr))
             {
-                bool hasTime = !string.IsNullOrEmpty(ddlFromHour.SelectedValue) &&
-                               !string.IsNullOrEmpty(ddlFromMinute.SelectedValue);
-
-                string query = "";
-
-                if (hasTime)
-                {
-                    // 🔥 SHOW ONLY CONFLICTS
-                    query = @"
-            SELECT a.VCAccountName, h.Topic, h.FromTime, h.ToTime, h.VCStatus
-            FROM VCRequestHeader h
-            INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
-            WHERE h.VCStatus IN ('Booked', 'Rescheduled')
-            AND h.VCAccountId = @VCAccountId
-            AND (@NewFromTime < h.ToTime AND @NewToTime > h.FromTime)
-            ORDER BY h.FromTime";
-                }
-                else
-                {
-                    // 🔥 SHOW FULL DAY BOOKINGS
-                    query = @"
-            SELECT a.VCAccountName, h.Topic, h.FromTime, h.ToTime, h.VCStatus
-            FROM VCRequestHeader h
-            INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
-            WHERE h.VCStatus IN ('Booked', 'Rescheduled')
-            AND h.VCAccountId = @VCAccountId
-            AND CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE)
-            ORDER BY h.FromTime";
-                }
+                string query = @"
+                    SELECT
+                        a.VCAccountName,
+                        h.Topic,
+                        h.FromTime,
+                        h.ToTime,
+                        h.VCStatus
+                    FROM VCRequestHeader h
+                    INNER JOIN VC_Account_Master a ON a.VCAccountId = h.VCAccountId
+                    WHERE h.VCStatus IN ('Booked', 'Rescheduled')
+                    AND (@HasDateFilter = 0 OR CAST(h.VCDate AS DATE) = CAST(@SelectedDate AS DATE))
+                    AND (@HasVCTypeFilter = 0 OR h.VCTypeId = @VCTypeId)
+                    AND (@HasAccountFilter = 0 OR h.VCAccountId = @VCAccountId)
+                    ORDER BY h.FromTime";
 
                 SqlCommand cmd = new SqlCommand(query, conn);
-
-                cmd.Parameters.Add("@VCAccountId", SqlDbType.Int).Value = ddlVCAccount.SelectedValue;
-                cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = DateTime.Parse(txtDate.Text);
-
-                if (hasTime)
-                {
-                    int fromHour = int.Parse(ddlFromHour.SelectedValue);
-                    int fromMinute = int.Parse(ddlFromMinute.SelectedValue);
-
-                    DateTime newFrom = DateTime.Parse(txtDate.Text)
-                                        .AddHours(fromHour)
-                                        .AddMinutes(fromMinute);
-
-                    int hours = string.IsNullOrEmpty(ddlHours.SelectedValue) ? 0 : int.Parse(ddlHours.SelectedValue);
-                    int minutes = string.IsNullOrEmpty(ddlMinutes.SelectedValue) ? 0 : int.Parse(ddlMinutes.SelectedValue);
-
-                    DateTime newTo = newFrom.AddMinutes((hours * 60) + minutes);
-
-                    cmd.Parameters.Add("@NewFromTime", SqlDbType.DateTime).Value = newFrom;
-                    cmd.Parameters.Add("@NewToTime", SqlDbType.DateTime).Value = newTo;
-                }
+                cmd.Parameters.Add("@HasDateFilter", SqlDbType.Bit).Value = hasDateFilter;
+                cmd.Parameters.Add("@SelectedDate", SqlDbType.Date).Value = hasDateFilter ? (object)DateTime.Parse(txtDate.Text) : DBNull.Value;
+                cmd.Parameters.Add("@HasVCTypeFilter", SqlDbType.Bit).Value = hasVCTypeFilter;
+                cmd.Parameters.Add("@VCTypeId", SqlDbType.Int).Value = hasVCTypeFilter ? (object)selectedVCTypeId : DBNull.Value;
+                
+                cmd.Parameters.Add("@HasAccountFilter", SqlDbType.Bit).Value = hasAccountFilter;
+                cmd.Parameters.Add("@VCAccountId", SqlDbType.Int).Value = hasAccountFilter ? (object)int.Parse(ddlVCAccount.SelectedValue) : DBNull.Value;
 
                 conn.Open();
                 SqlDataAdapter da = new SqlDataAdapter(cmd);

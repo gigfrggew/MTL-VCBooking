@@ -99,13 +99,13 @@ namespace VCBooking.Services
             var eventData = new
             {
                 summary = topic,
-                description = $"VC Booking: {topic}\nJoin: {meetLink}",
+                description = string.Format("VC Booking: {0}\nJoin: {1}", topic, meetLink),
                 start = new { dateTime = startTime.ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" },
                 end = new { dateTime = startTime.AddMinutes(durationMinutes).ToString("yyyy-MM-ddTHH:mm:ssZ"), timeZone = "UTC" }
             };
 
             var json = JsonConvert.SerializeObject(eventData);
-            string url = $"https://www.googleapis.com/calendar/v3/calendars/{_calendarId}/events";
+            string url = string.Format("https://www.googleapis.com/calendar/v3/calendars/{0}/events", _calendarId);
 
             using (var request = new HttpRequestMessage(HttpMethod.Post, url))
             {
@@ -141,7 +141,7 @@ namespace VCBooking.Services
             };
 
             var json = JsonConvert.SerializeObject(eventData);
-            string url = $"https://www.googleapis.com/calendar/v3/calendars/{_calendarId}/events/{eventId}";
+            string url = string.Format("https://www.googleapis.com/calendar/v3/calendars/{0}/events/{1}", _calendarId, eventId);
 
             using (var request = new HttpRequestMessage(new HttpMethod("PATCH"), url))
             {
@@ -161,7 +161,7 @@ namespace VCBooking.Services
         public async Task DeleteMeetingAsync(string eventId)
         {
             string token = await GetAccessTokenAsync();
-            string url = $"https://www.googleapis.com/calendar/v3/calendars/{_calendarId}/events/{eventId}";
+            string url = string.Format("https://www.googleapis.com/calendar/v3/calendars/{0}/events/{1}", _calendarId, eventId);
 
             using (var request = new HttpRequestMessage(HttpMethod.Delete, url))
             {

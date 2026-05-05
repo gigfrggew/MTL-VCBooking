@@ -60,6 +60,10 @@ form {
     margin: 0 auto;
 }
 
+.rail-card-wide {
+    max-width: 1500px;
+}
+
 @keyframes slideInRail {
     to {
         opacity: 1;

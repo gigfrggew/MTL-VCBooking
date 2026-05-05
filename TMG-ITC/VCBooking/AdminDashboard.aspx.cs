@@ -240,18 +240,19 @@ namespace VCBooking
                 // Disable Reschedule & Cancel for terminal statuses
                 Button btnReschedule = (Button)e.Row.FindControl("btnReschedule");
                 Button btnCancel = (Button)e.Row.FindControl("btnCancel");
+                Button btnDelete = (Button)e.Row.FindControl("btnDelete");
 
                 if (btnReschedule != null)
                 {
-                    btnReschedule.Enabled = !isTerminal;
-                    if (isTerminal)
-                        btnReschedule.CssClass = "btn btn-primary btn-sm btn-disabled-custom";
+                    btnReschedule.Visible = !isTerminal;
                 }
                 if (btnCancel != null)
                 {
-                    btnCancel.Enabled = !isTerminal;
-                    if (isTerminal)
-                        btnCancel.CssClass = "btn btn-warning btn-sm btn-disabled-custom";
+                    btnCancel.Visible = !isTerminal;
+                }
+                if (btnDelete != null)
+                {
+                    btnDelete.Visible = isTerminal;
                 }
             }
         }

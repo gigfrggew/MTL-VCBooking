@@ -53,7 +53,7 @@ form {
 .rail-viewport {
     width: 100%;
     min-height: 100vh;
-    padding: 56px 18px;
+    padding: 48px 32px;
     overflow-x: hidden;
     overflow-y: auto;
 }
@@ -68,6 +68,12 @@ form {
 
 .rail-card {
     max-width: 1180px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.rail-card-wide {
+    max-width: 1500px;
     width: 100%;
     margin: 0 auto;
 }
@@ -550,8 +556,30 @@ a.nav-back-link {
 }
 
 .compact-preview {
-    min-height: 0;
     background: #fafafa;
+    overflow-x: auto;
+    border-radius: 12px;
+}
+
+.compact-preview .table-premium {
+    min-width: 0 !important;
+}
+
+.btn-remove-participant {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: #cbd5e1;
+    font-size: 18px;
+    padding: 2px 4px;
+    transition: color 0.15s ease;
+    text-decoration: none !important;
+}
+
+.btn-remove-participant:hover {
+    color: #ef4444;
 }
 
 .compact-preview .table-premium,

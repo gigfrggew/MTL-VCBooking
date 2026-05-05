@@ -62,11 +62,11 @@ namespace TMG_ITC
                     }
                     Session["IsAdmin"] = isAdmin;
 
-                    Response.Redirect("~/Dashboard.aspx");
+                    ScriptManager.RegisterStartupScript(this, GetType(), "LoginSuccess", "showLoginResult(true);", true);
                 }
                 else
                 {
-                    Response.Write("<script>alert('Invalid Credentials');</script>");
+                    ScriptManager.RegisterStartupScript(this, GetType(), "LoginFail", "showLoginResult(false, 'Invalid Credentials');", true);
                 }
             }
         }
