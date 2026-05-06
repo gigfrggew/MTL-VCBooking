@@ -11,8 +11,18 @@
     <link href="../Content/Site.css?v=20260427-clean3" rel="stylesheet" />
     <script src="../Scripts/bootstrap.bundle.min.js"></script>
     <script>
+        var processingTimer;
         function showProcessingOverlay() {
-            document.getElementById('processingOverlay').classList.add('show');
+            processingTimer = setTimeout(function() {
+                var overlay = document.getElementById('processingOverlay');
+                if (overlay) overlay.classList.add('show');
+            }, 300);
+        }
+
+        function hideProcessingOverlay() {
+            clearTimeout(processingTimer);
+            var overlay = document.getElementById('processingOverlay');
+            if (overlay) overlay.classList.remove('show');
         }
 
         document.addEventListener('DOMContentLoaded', function () {
@@ -46,11 +56,11 @@
                         <h5 class="section-title mb-4">Basic Information</h5>
                         <div class="row g-4 mb-3">
                             <div class="col-md-6">
-                                <label class="text-label">Company</label>
+                                <label class="text-label">Company <span class="text-danger">*</span></label>
                                 <asp:DropDownList runat="server" ID="ddlCompany" CssClass="form-select form-control-premium" />
                             </div>
                             <div class="col-md-6">
-                                <label class="text-label">Meeting Topic</label>
+                                <label class="text-label">Meeting Topic <span class="text-danger">*</span></label>
                                 <asp:TextBox runat="server" ID="txtTopic" CssClass="form-control form-control-premium" placeholder="What is the meeting about?" />
                             </div>
                         </div>
@@ -58,20 +68,20 @@
                         <!-- DATE + VC TYPE + VC ACCOUNT: Horizontal row below topic -->
                         <div class="row g-4 mb-5">
                             <div class="col-md-4">
-                                <label class="text-label">Booking Date</label>
+                                <label class="text-label">Booking Date <span class="text-danger">*</span></label>
                                 <asp:TextBox ID="txtDate" runat="server" TextMode="Date"
                                     AutoPostBack="true" OnTextChanged="DateOrTimeChanged"
                                     CssClass="form-control form-control-premium" />
                             </div>
                             <div class="col-md-4">
-                                <label class="text-label">VC Type</label>
+                                <label class="text-label">VC Type <span class="text-danger">*</span></label>
                                 <asp:DropDownList runat="server" ID="ddlVCType"
                                     AutoPostBack="true"
                                     OnSelectedIndexChanged="ddlVCType_SelectedIndexChanged"
                                     CssClass="form-select form-control-premium" />
                             </div>
                             <div class="col-md-4">
-                                <label class="text-label">VC Account</label>
+                                <label class="text-label">VC Account <span class="text-danger">*</span></label>
                                 <asp:DropDownList runat="server" ID="ddlVCAccount"
                                     CssClass="form-select form-control-premium"
                                     AutoPostBack="true"
@@ -86,7 +96,7 @@
                             <!-- LEFT: From Time, Duration, Location - stacked vertically -->
                             <div class="col-md-3">
                                 <div class="mb-4">
-                                    <label class="text-label">From Time</label>
+                                    <label class="text-label">From Time <span class="text-danger">*</span></label>
                                     <div class="d-flex gap-2">
                                         <asp:DropDownList ID="ddlFromHour" runat="server"
                                             AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
@@ -104,7 +114,7 @@
                                 </div>
 
                                 <div class="mb-4">
-                                    <label class="text-label">Duration</label>
+                                    <label class="text-label">Duration <span class="text-danger">*</span></label>
                                     <div class="d-flex gap-2">
                                         <asp:DropDownList ID="ddlHours" runat="server"
                                             AutoPostBack="true" OnSelectedIndexChanged="DateOrTimeChanged"
@@ -133,7 +143,7 @@
                                 </div>
 
                                 <div class="mb-0">
-                                    <label class="text-label">Location</label>
+                                    <label class="text-label">Location <span class="text-danger">*</span></label>
                                     <asp:DropDownList runat="server" ID="ddlLocation" CssClass="form-select form-control-premium" />
                                 </div>
                             </div>
@@ -141,7 +151,7 @@
                             <!-- RIGHT: Booked Meetings preview - always visible -->
                             <div class="col-md-9">
                                 <label class="text-label">Booked / Rescheduled Meetings on Selected Date &amp; Type</label>
-                                <div class="compact-preview border rounded-3 p-2" style="min-height: 60px; max-height: 350px; overflow-y: auto; background: #fafafa;">
+                                <div class="compact-preview rounded-3 p-2" style="min-height: 60px; max-height: 350px; overflow-y: auto; background: rgba(250, 250, 250, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(0,0,0,0.05); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);">
                                     <asp:GridView runat="server" ID="gvBookedSlots"
                                         CssClass="table table-premium table-sm mb-0"
                                         AutoGenerateColumns="false"
@@ -172,7 +182,7 @@
                         </div>
 
                         <!-- PARTICIPANTS -->
-                        <h5 class="section-title mb-4">Participants</h5>
+                        <h5 class="section-title mb-4">Participants <span class="text-danger">*</span></h5>
                         <div class="row g-3 mb-4">
                             <div class="col-md-8">
                                 <asp:TextBox runat="server" ID="txtParticipant" CssClass="form-control form-control-premium" placeholder="Enter email address(es), comma-separated..." />
@@ -216,7 +226,6 @@
                     </div>
                 </ContentTemplate>
                 <Triggers>
-                    <asp:PostBackTrigger ControlID="btnFormSubmit" />
                 </Triggers>
             </asp:UpdatePanel>
         </div>

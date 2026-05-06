@@ -395,6 +395,8 @@ namespace VCBooking
                             catch (Exception exEmail) { System.Diagnostics.Debug.WriteLine("Email Error: " + exEmail.Message); }
 
                             hdnShowSuccess.Value = "1";
+                            string successScript = "if (typeof hideProcessingOverlay === 'function') hideProcessingOverlay(); new bootstrap.Modal(document.getElementById('successModal')).show();";
+                            ScriptManager.RegisterStartupScript(this, GetType(), "showSuccessModal", successScript, true);
                         }
                         catch (Exception ex)
                         {
@@ -418,6 +420,8 @@ namespace VCBooking
             string icon = type == "error" ? "bi-exclamation-circle-fill" : "bi-check-circle-fill";
             
             string script = string.Format(@"
+                if (typeof hideProcessingOverlay === 'function') hideProcessingOverlay();
+                
                 var toastHtml = `<div class='custom-toast' style='position: fixed; top: 20px; right: 20px; z-index: 1050; background: {1}; color: {2}; padding: 15px 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-left: 4px solid {2}; font-weight: 500; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; display: flex; align-items: center; gap: 10px;'><i class='bi {3} fs-5'></i> <span>{0}</span></div>`;
                 document.body.insertAdjacentHTML('beforeend', toastHtml);
                 var toasts = document.querySelectorAll('.custom-toast');
