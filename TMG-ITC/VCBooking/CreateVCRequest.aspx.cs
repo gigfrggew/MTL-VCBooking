@@ -72,6 +72,8 @@ namespace VCBooking
                 ddlHours.SelectedValue = "0";
                 ddlMinutes.SelectedValue = "15";
 
+                // Initialize the GridView so that EmptyDataText is rendered immediately
+                LoadBookedSlots();
             }
 
         }
@@ -441,6 +443,8 @@ namespace VCBooking
         {
             try
             {
+                string previousSelection = ddlVCAccount.SelectedValue;
+
                 ddlVCAccount.Items.Clear();
                 ddlVCAccount.Items.Add(new ListItem("-- Select Account --", ""));
                 ViewState["BusyAccountIds"] = new List<string>();
@@ -516,6 +520,30 @@ namespace VCBooking
                 }
 
                 ViewState["BusyAccountIds"] = busyIds;
+
+                // Restore previous selection if it still exists
+                if (!string.IsNullOrEmpty(previousSelection) && ddlVCAccount.Items.FindByValue(previousSelection) != null)
+                {
+                    ddlVCAccount.SelectedValue = previousSelection;
+
+                    if (busyIds.Contains(previousSelection))
+                    {
+                        // Show toast and reset selection
+                        string accountName = ddlVCAccount.SelectedItem.Text.Replace("  ⚠ Already Booked", "").Trim();
+                        string msg = string.Format("{0} is already booked for the selected time slot. Please choose a different account or adjust the time.", accountName);
+                        
+                        string script = string.Format(@"
+                            var toastHtml = `<div id='busyToast' style='position: fixed; top: 20px; right: 20px; z-index: 1050; background: #fee2e2; color: #ef4444; padding: 15px 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-left: 4px solid #ef4444; font-weight: 500; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; display: flex; align-items: center; gap: 10px;'><i class='bi bi-exclamation-circle-fill fs-5'></i> <span>{0}</span></div>`;
+                            document.body.insertAdjacentHTML('beforeend', toastHtml);
+                            var toast = document.getElementById('busyToast');
+                            setTimeout(() => {{ toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }}, 10);
+                            setTimeout(() => {{ toast.style.opacity = '0'; toast.style.transform = 'translateY(-20px)'; setTimeout(() => toast.remove(), 300); }}, 10000);
+                        ", msg.Replace("'", "\\'"));
+
+                        ScriptManager.RegisterStartupScript(this, GetType(), "busyAlert", script, true);
+                        ddlVCAccount.SelectedIndex = 0; // reset to --Select--
+                    }
+                }
             }
             catch (Exception ex)
             {

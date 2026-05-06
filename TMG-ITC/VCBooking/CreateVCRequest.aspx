@@ -155,7 +155,7 @@
                                     <asp:GridView runat="server" ID="gvBookedSlots"
                                         CssClass="table table-premium table-sm mb-0"
                                         AutoGenerateColumns="false"
-                                        EmptyDataText="No meetings booked - select a date or VC type to load schedule."
+                                        EmptyDataText="Select VC Type and booking date to load booked meetings schedule."
                                         GridLines="None">
                                         <Columns>
                                             <asp:BoundField DataField="VCAccountName" HeaderText="Account" />
